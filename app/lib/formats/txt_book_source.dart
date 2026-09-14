@@ -3,6 +3,7 @@ import 'dart:io';
 import '../domain/book_format.dart';
 import '../domain/book_locator.dart';
 import '../domain/book_source.dart';
+import 'file_naming.dart';
 import 'text_chunker.dart';
 import 'text_decoding.dart';
 
@@ -26,6 +27,18 @@ class TxtBookSource implements ReflowableSource {
   /// libro cuando el texto salga raro y el usuario quiera entender por qué.
   TextEncodingUsed? get encoding => _encoding;
 
+  /// Longitud total en caracteres. Es el denominador del progreso y el final
+  /// del último fragmento.
+  int get totalChars => _text?.length ?? 0;
+
+  /// Rango de caracteres que abarca un fragmento.
+  (int start, int end) chunkRange(int index) {
+    final chunks = _chunks;
+    if (chunks == null) throw StateError('Llama a open() primero');
+    final chunk = chunks[index];
+    return (chunk.start, chunk.end);
+  }
+
   @override
   BookFormat get format => BookFormat.txt;
 
@@ -46,7 +59,7 @@ class TxtBookSource implements ReflowableSource {
     }
 
     _chunks = TextChunker.split(_text!, targetChars: targetChars);
-    _info = BookInfo(title: _titleFromFileName(file.path));
+    _info = BookInfo(title: titleFromFileName(file.path));
   }
 
   @override
@@ -128,13 +141,4 @@ class TxtBookSource implements ReflowableSource {
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;');
-
-  static String _titleFromFileName(String path) {
-    final name = path.split(RegExp(r'[/\\]')).last;
-    final dot = name.lastIndexOf('.');
-    final bare = dot > 0 ? name.substring(0, dot) : name;
-    // Los ficheros descargados suelen venir con guiones y bajos en lugar de
-    // espacios; se normalizan para que el título se pueda leer.
-    return bare.replaceAll(RegExp(r'[_]+'), ' ').trim();
-  }
 }

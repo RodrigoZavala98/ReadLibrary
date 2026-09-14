@@ -24,6 +24,7 @@ class LibraryBook {
     this.progress = 0,
     this.totalPages,
     this.collection,
+    this.fingerprint,
   });
 
   final int id;
@@ -61,6 +62,10 @@ class LibraryBook {
   /// Carpeta o estantería a la que pertenece. `null` es la raíz.
   final String? collection;
 
+  /// Huella del fichero original, para reconocer que un libro ya está en la
+  /// biblioteca aunque se importe desde otra carpeta o con otro nombre.
+  final String? fingerprint;
+
   bool get isStarted => progress > 0;
 
   /// Se considera terminado al 99 %: en un EPUB casi nunca se llega al 100 %
@@ -93,6 +98,7 @@ class LibraryBook {
       progress: progress ?? this.progress,
       totalPages: totalPages ?? this.totalPages,
       collection: collection ?? this.collection,
+      fingerprint: fingerprint,
     );
   }
 }

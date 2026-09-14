@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
+import '../ui/library_screen.dart';
 
 /// Las cuatro secciones de la aplicación.
 ///
@@ -48,10 +49,7 @@ class _HomeShellState extends State<HomeShell> {
             title: 'Mi Refugio',
             detail: 'Racha de lectura y último libro abierto.',
           ),
-          HomeSection.biblioteca => const _Placeholder(
-            title: 'Mi Biblioteca',
-            detail: 'Tus libros, con portada y progreso.',
-          ),
+          HomeSection.biblioteca => const LibraryScreen(),
           HomeSection.notas => const _Placeholder(
             title: 'Mis Notas',
             detail: 'Frases guardadas y subrayados de tus lecturas.',
