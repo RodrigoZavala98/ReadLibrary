@@ -1,0 +1,19 @@
+# Artefactos de compilación y cachés. El proyecto Flutter tiene además su
+# propio .gitignore dentro de app/.
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+
+# Editores
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# Sistema
+.DS_Store
+Thumbs.db

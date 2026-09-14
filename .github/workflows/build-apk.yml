@@ -1,0 +1,58 @@
+name: Compilar APK
+
+# Se ejecuta en cada push a main y también a mano desde la pestaña Actions,
+# con el botón "Run workflow".
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: APK de depuración
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # La misma versión que usamos en local, para que un fallo aquí signifique
+      # un fallo de verdad y no una diferencia de entorno.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+
+      - name: Descargar dependencias
+        run: flutter pub get
+
+      - name: Análisis estático
+        run: flutter analyze
+
+      - name: Pruebas
+        run: flutter test
+
+      # Se compila en modo depuración a propósito: un APK de release sin firmar
+      # no se puede instalar en un teléfono. El de depuración va firmado con la
+      # clave de desarrollo y se instala directamente.
+      - name: Compilar APK
+        run: flutter build apk --debug
+
+      - name: Publicar el APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lector-debug-apk
+          path: app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30

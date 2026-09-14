@@ -1,0 +1,56 @@
+Lector de libros y/o archivos de texto
+Capacidad de leer PDF, epub, fb2, cbr, cbz, txt, rtf
+
+Estilo Visual: Glassmorphism y Neomorfismo SuaveFondos Dinámicos: Utiliza el color de la portada del libro actual para generar un fondo con un degradado difuminado muy suave (BackdropFilter con un blur ligero). Esto hace que toda la interfaz se adapte orgánicamente al libro que estás leyendo.Portadas en 3D: En lugar de mostrar tarjetas planas en la biblioteca, puedes crear un efecto de profundidad 3D al inclinar ligeramente las portadas cuando el usuario interactúe con ellas, usando el widget Transform o el paquete flutter_carousel_slider.
+
+Funciones Divertidas y "Enganchantes" (Gamificación)Para generar tracción y que el usuario quiera regresar a la app todos los días, implementa estos detalles visuales:Rachas de Lectura Visuales: Diseña un widget circular animado en la pantalla de inicio que muestre los días seguidos que el usuario ha leído. Usa fuegos animados o animaciones con Lottie para celebrar cuando cumpla su meta diaria.Recompensas por Progreso: Al terminar un capítulo o un libro entero, haz estallar confeti digital en la pantalla usando el paquete confetti.Estadísticas Divertidas: Transforma los datos aburridos en gráficos atractivos (por ejemplo: "¡Esta semana leíste el equivalente a la altura de la Torre Eiffel en páginas!").
+
+Animaciones que Enamoran al UsuarioLas transiciones fluidas son la clave para que una app se sienta "premium". Implementa estas tres interacciones:Efecto de Paso de Página Realístico: Para los formatos que no son puramente texto (como PDFs o Cómics), utiliza el paquete page_flip para simular que el usuario está doblando una hoja física con el dedo.Animaciones Hero (Transición Heroica): Usa el widget Hero de Flutter para que, al tocar la portada de un libro en la biblioteca, esta se expanda de forma fluida y natural hasta convertirse en la cabecera de la pantalla de lectura.Controles Flotantes Escondibles: La interfaz de lectura debe ser ultra-limpia. Al hacer un toque en el centro de la pantalla, los menús de configuración deben aparecer con un efecto de rebote suave (Curves.elasticOut) y desaparecer por completo al leer para una inmersión total.
+
+Estructura del Menú de Navegación ModernoOlvídate de la barra de navegación gris y aburrida. Diseña una experiencia con estas tres secciones clave utilizando un menú flotante curvado:
+🏠 Mi Refugio
+Rachas de lectura, último libro abierto.          
+
+📚 Mi Biblioteca
+Tus libros organizados por carpetas con portadas.
+
+📊 Mi Viaje
+Logros, estadísticas y tiempo de lectura animado
+
+Caracteristicas esenciales
+1. Paginación o Scroll: Decidir si el usuario pasará páginas de forma horizontal (efecto libro) o vertical (efecto web).
+2. Personalización de Texto: Permitir cambiar el tamaño de la fuente, el tipo de letra (serif vs. sans-serif) y el interlineado.
+3. Control de Brillo y Modos de Color: Implementar obligatoriamente el Modo Oscuro y el modo Sepia para evitar el cansancio visual.
+4. Persistencia de Datos (Room Base de Datos): Para guardar el progreso de lectura (en qué página o porcentaje se quedó el usuario) y los marcadores de páginas.
+
+                     ┌──► EPUB ──► flutter_epub_viewer (Basado en WebViews)
+                     ├──► PDF  ──► syncfusion_flutter_pdfviewer o flutter_pdfview
+Archivo del Libro ───┼──► CÓMICS (CBR/CBZ) ──► comic_reader o archive (Imágenes en Grid)
+                     ├──► FB2  ──► fb2_parse (Convierte a HTML) ──► flutter_html
+                     └──► TXT  ──► Lector Nativo Dart (Text / Custom Painters)
+					 
+📦 Paquetes Esenciales por Formato
+1. Formato EPUB (El más importante)
+flutter_epub_viewer: Es una de las mejores opciones actuales. Combina la potencia del motor web Epub.js con un WebView interno (flutter_inappwebview). Te permite manejar de forma nativa la selección de texto, resaltados y el salto entre capítulos
+
+epub_pro u epub_plus: Si prefieres extraer tú mismo los metadatos de los libros, portadas y capítulos de manera ultra rápida para guardarlos en tu propia base de datos (Room/Isar), estas librerías procesan el archivo ZIP interno del EPUB directamente en Dart puro.
+
+2. Formato PDF (Diseño Fijo)
+syncfusion_flutter_pdfviewer: La librería más madura y robusta para renderizar PDFs de gran tamaño en Flutter de manera fluida. Soporta zoom de alta fidelidad, navegación por páginas y marcadores.
+flutter_pdfview: Una alternativa open source excelente y ligera si solo buscas visualización básica
+
+3. Cómics y Mangas (CBR / CBZ)
+Los archivos .cbz y .cbr son simplemente carpetas ZIP o RAR llenas de imágenes numeradas (JPEG/PNG). 
+comic_reader: Un paquete especializado en Flutter para extraer, listar y paginar las imágenes de estos contenedores con soporte de zoom gestual integrado. 
+Alternativamente, puedes usar el paquete archive para descomprimir el archivo manualmente en la caché del teléfono y mostrar los archivos usando un widget PageView.builder combinado con un componente de zoom interactivo (InteractiveViewer).
+
+4. Formato FB2 (FictionBook)
+fb2_parse: Este plugin analiza los metadatos y la estructura XML nativa del formato FB2 y la transforma en texto HTML.Una vez que tienes el texto convertido en HTML, lo puedes renderizar con total fluidez en tu interfaz utilizando el widget flutter_html, aplicando los estilos tipográficos que tu usuario elija.
+
+5. Texto Plano (TXT / RTF)
+Para TXT: No se necesita dependencias externas. Usar el lector de archivos nativo de Dart (File.readAsString()) y renderízalo dentro de un widget de Flutter. Para evitar problemas de rendimiento con textos de millones de palabras, implementa una lógica que fragmente el texto largo en sub-bloques pequeños.
+
+
+Para complementar los múltiples formatos, debes estructurar la persistencia de datos. Los usuarios necesitan que la app recuerde en qué página o porcentaje exacto de lectura se quedaron
+Base de datos local (Isar o Hive): Crea una tabla unificada para tu biblioteca. Guarda campos clave como id_libro, ruta_archivo_local, formato, ultimo_capitulo_leido y porcentaje_progreso.Rendimiento en Background: Al abrir libros muy pesados (por ejemplo, PDFs técnicos o cómics CBR de alta resolución), procesa la extracción del archivo utilizando Flutter Isolates. Esto evitará que la interfaz de usuario sufra pequeños congelamientos mientras carga el contenido
+
