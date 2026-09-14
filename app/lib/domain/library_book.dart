@@ -66,7 +66,12 @@ class LibraryBook {
   /// biblioteca aunque se importe desde otra carpeta o con otro nombre.
   final String? fingerprint;
 
-  bool get isStarted => progress > 0;
+  /// Si el lector ya se ha puesto con él.
+  ///
+  /// No basta con mirar el progreso. Un texto que cabe entero en pantalla no
+  /// genera desplazamiento, así que su avance se queda en cero exacto por mucho
+  /// rato que se haya pasado leyéndolo. Haberlo abierto alguna vez ya cuenta.
+  bool get isStarted => progress > 0 || lastOpenedAt != null;
 
   /// Se considera terminado al 99 %: en un EPUB casi nunca se llega al 100 %
   /// exacto, porque el último salto suele caer en la página de créditos.

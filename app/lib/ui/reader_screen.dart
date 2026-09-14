@@ -17,9 +17,13 @@ import 'simple_html.dart';
 /// convierte en papel. No hay barra de navegación ni botones a la vista; un
 /// toque en el centro hace aparecer los controles y otro los esconde.
 class ReaderScreen extends StatefulWidget {
-  const ReaderScreen({required this.book, super.key});
+  const ReaderScreen({required this.book, this.now = DateTime.now, super.key});
 
   final LibraryBook book;
+
+  /// De dónde sale la hora actual. Se puede sustituir en las pruebas para
+  /// simular una lectura larga sin esperarla de verdad.
+  final DateTime Function() now;
 
   @override
   State<ReaderScreen> createState() => _ReaderScreenState();
@@ -39,12 +43,27 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   final _style = const ReadingStyle();
 
+  /// Los servicios, capturados mientras el widget está vivo.
+  ///
+  /// No se puede llamar a `AppScope.of(context)` desde [dispose]: por debajo
+  /// usa `dependOnInheritedWidgetOfExactType`, y Flutter lo prohíbe sobre un
+  /// widget ya desactivado —«Looking up a deactivated widget's ancestor is
+  /// unsafe»—. Hacerlo lanzaba una excepción justo en el momento de guardar, y
+  /// ni la posición ni la sesión llegaban nunca al disco.
+  AppServices? _services;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _clock.start(DateTime.now());
+    _clock.start(widget.now());
     _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _services = AppScope.of(context);
   }
 
   @override
@@ -65,7 +84,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   /// noche como tiempo de lectura, y la racha dejaría de significar nada.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final now = DateTime.now();
+    final now = widget.now();
     switch (state) {
       case AppLifecycleState.resumed:
         _clock.resume(now);
@@ -136,29 +155,32 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   void _persistPosition() {
     final source = _source;
-    if (source == null || !mounted) return;
+    final services = _services;
+    if (source == null || services == null) return;
 
     final locator = _currentLocator();
     final updated = widget.book.copyWith(
       locator: locator,
       progress: source.progressAt(locator),
-      lastOpenedAt: DateTime.now(),
+      lastOpenedAt: widget.now(),
     );
     // Sin await: estamos en dispose y el guardado es de tipo «dispara y olvida».
     // Un fallo aquí solo cuesta la posición de lectura, no el libro.
-    AppScope.of(context).repository.save(updated);
+    services.repository.save(updated);
   }
 
   void _persistSession() {
-    if (!mounted) return;
+    final services = _services;
+    if (services == null) return;
+
     final session = _clock.toSession(
       bookId: widget.book.id,
-      now: DateTime.now(),
+      now: widget.now(),
     );
     // `null` cuando se abrió el libro y se salió enseguida: no ensucia el
     // historial ni regala días de racha.
     if (session == null) return;
-    AppScope.of(context).sessions.add(session);
+    services.sessions.add(session);
   }
 
   @override
