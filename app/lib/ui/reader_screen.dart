@@ -7,6 +7,7 @@ import '../core/theme/app_theme.dart';
 import '../domain/book_format.dart';
 import '../domain/book_locator.dart';
 import '../domain/library_book.dart';
+import '../domain/reading_clock.dart';
 import '../formats/txt_book_source.dart';
 import 'simple_html.dart';
 
@@ -24,8 +25,10 @@ class ReaderScreen extends StatefulWidget {
   State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _ReaderScreenState extends State<ReaderScreen> {
+class _ReaderScreenState extends State<ReaderScreen>
+    with WidgetsBindingObserver {
   final _scroll = ScrollController();
+  final _clock = ReadingClock();
 
   TxtBookSource? _source;
   List<String> _paragraphs = const [];
@@ -39,17 +42,39 @@ class _ReaderScreenState extends State<ReaderScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _clock.start(DateTime.now());
     _load();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Se guarda aquí y no en cada desplazamiento: escribir el índice entero en
     // disco docenas de veces por minuto sería desperdiciar batería para nada.
     _persistPosition();
+    _persistSession();
     _scroll.dispose();
     _source?.dispose();
     super.dispose();
+  }
+
+  /// El cronómetro sigue al ciclo de vida de la aplicación.
+  ///
+  /// Sin esto, dejar el libro abierto y bloquear el móvil registraría toda la
+  /// noche como tiempo de lectura, y la racha dejaría de significar nada.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final now = DateTime.now();
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _clock.resume(now);
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        _clock.pause(now);
+    }
   }
 
   Future<void> _load() async {
@@ -122,6 +147,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
     // Sin await: estamos en dispose y el guardado es de tipo «dispara y olvida».
     // Un fallo aquí solo cuesta la posición de lectura, no el libro.
     AppScope.of(context).repository.save(updated);
+  }
+
+  void _persistSession() {
+    if (!mounted) return;
+    final session = _clock.toSession(
+      bookId: widget.book.id,
+      now: DateTime.now(),
+    );
+    // `null` cuando se abrió el libro y se salió enseguida: no ensucia el
+    // historial ni regala días de racha.
+    if (session == null) return;
+    AppScope.of(context).sessions.add(session);
   }
 
   @override

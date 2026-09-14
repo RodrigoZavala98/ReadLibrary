@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
 import '../ui/library_screen.dart';
+import '../ui/refugio_screen.dart';
 
 /// Las cuatro secciones de la aplicación.
 ///
@@ -45,10 +46,7 @@ class _HomeShellState extends State<HomeShell> {
       body: SafeArea(
         bottom: false,
         child: switch (_section) {
-          HomeSection.refugio => const _Placeholder(
-            title: 'Mi Refugio',
-            detail: 'Racha de lectura y último libro abierto.',
-          ),
+          HomeSection.refugio => const RefugioScreen(),
           HomeSection.biblioteca => const LibraryScreen(),
           HomeSection.notas => const _Placeholder(
             title: 'Mis Notas',
