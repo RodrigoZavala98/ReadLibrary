@@ -43,6 +43,15 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   final _style = const ReadingStyle();
 
+  /// Hasta dónde se ha avanzado dentro del fragmento actual, de 0 a 1.
+  ///
+  /// Se mantiene al día en cada desplazamiento **mientras el widget vive**, en
+  /// lugar de consultarse al cerrar. Preguntárselo al `ScrollController` desde
+  /// `dispose()` no funciona: Flutter desmonta los hijos antes que los padres,
+  /// así que para entonces el `ListView` ya no existe y la posición está
+  /// desacoplada. El valor leído sería siempre cero.
+  double _lastFraction = 0;
+
   /// Los servicios, capturados mientras el widget está vivo.
   ///
   /// No se puede llamar a `AppScope.of(context)` desde [dispose]: por debajo
@@ -56,8 +65,19 @@ class _ReaderScreenState extends State<ReaderScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _scroll.addListener(_rememberPosition);
     _clock.start(widget.now());
     _load();
+  }
+
+  /// Anota el avance dentro del fragmento actual.
+  void _rememberPosition() {
+    if (!_scroll.hasClients) return;
+    final max = _scroll.position.maxScrollExtent;
+    // Sin nada que desplazar, el fragmento entero está a la vista: se ha visto
+    // hasta el final. Tratarlo como «estoy al principio» dejaría un texto corto
+    // leído de cabo a rabo marcado al cero por ciento.
+    _lastFraction = max <= 0 ? 1 : (_scroll.offset / max).clamp(0.0, 1.0);
   }
 
   @override
@@ -114,13 +134,31 @@ class _ReaderScreenState extends State<ReaderScreen>
       return;
     }
 
-    final start = widget.book.locator ?? source.startLocator;
+    final saved = widget.book.locator ?? source.startLocator;
     _source = source;
     _chunkCount = source.chapters.length;
-    await _showChunk(source.chunkIndexFor(start));
+
+    final index = source.chunkIndexFor(saved);
+    await _showChunk(index, atFraction: _fractionWithin(source, index, saved));
   }
 
-  Future<void> _showChunk(int index) async {
+  /// En qué punto del fragmento [index] cae una posición guardada.
+  ///
+  /// Sin esto, retomar un libro te dejaba siempre al principio del fragmento.
+  /// Con trozos de veinte mil caracteres eso son varias pantallas de distancia:
+  /// «continuar leyendo» te hacía buscar por dónde ibas.
+  static double _fractionWithin(
+    TxtBookSource source,
+    int index,
+    BookLocator locator,
+  ) {
+    if (locator is! CharLocator) return 0;
+    final (start, end) = source.chunkRange(index);
+    if (end <= start) return 0;
+    return ((locator.charOffset - start) / (end - start)).clamp(0.0, 1.0);
+  }
+
+  Future<void> _showChunk(int index, {double atFraction = 0}) async {
     final source = _source;
     if (source == null) return;
 
@@ -129,8 +167,17 @@ class _ReaderScreenState extends State<ReaderScreen>
     setState(() {
       _chunkIndex = index;
       _paragraphs = SimpleHtml.toParagraphs(html);
+      _lastFraction = atFraction;
     });
-    if (_scroll.hasClients) _scroll.jumpTo(0);
+
+    // La posición solo se puede fijar cuando la lista ya está maquetada, que es
+    // también el único momento en que se conoce su extensión desplazable.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final max = _scroll.position.maxScrollExtent;
+      if (max > 0) _scroll.jumpTo(max * atFraction);
+      _rememberPosition();
+    });
   }
 
   /// Dónde está el lector ahora mismo, en caracteres desde el inicio del libro.
@@ -145,12 +192,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (source == null) return const CharLocator(0);
 
     final (start, end) = source.chunkRange(_chunkIndex);
-    if (!_scroll.hasClients || _scroll.position.maxScrollExtent <= 0) {
-      return CharLocator(start);
-    }
-    final fraction =
-        (_scroll.offset / _scroll.position.maxScrollExtent).clamp(0.0, 1.0);
-    return CharLocator(start + ((end - start) * fraction).round());
+    return CharLocator(start + ((end - start) * _lastFraction).round());
   }
 
   void _persistPosition() {

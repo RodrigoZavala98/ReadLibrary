@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lector/app_services.dart';
 import 'package:lector/core/theme/app_theme.dart';
 import 'package:lector/domain/book_format.dart';
+import 'package:lector/domain/book_locator.dart';
 import 'package:lector/domain/library_book.dart';
 import 'package:lector/ui/reader_screen.dart';
 
@@ -40,7 +41,11 @@ void main() {
     await tester.pump();
   }
 
-  Future<LibraryBook> prepararLibro(WidgetTester tester) async {
+  Future<LibraryBook> prepararLibro(
+    WidgetTester tester, {
+    int parrafos = 400,
+    BookLocator? locator,
+  }) async {
     final file = File('${temp.path}${Platform.pathSeparator}dune.txt');
     final book = LibraryBook(
       id: 1,
@@ -48,11 +53,15 @@ void main() {
       format: BookFormat.txt,
       title: 'Dune',
       addedAt: DateTime(2026, 3, 1),
+      locator: locator,
     );
 
     await tester.runAsync(() async {
       await file.writeAsString(
-        List.generate(400, (i) => 'Párrafo $i. ${'palabra ' * 20}').join('\n\n'),
+        List.generate(
+          parrafos,
+          (i) => 'Párrafo $i. ${'palabra ' * 20}',
+        ).join('\n\n'),
       );
       await services.repository.save(book);
     });
@@ -150,5 +159,88 @@ void main() {
       const Duration(minutes: 10),
       reason: 'las dos horas con la pantalla apagada no son lectura',
     );
+  });
+
+  /// Segundo fallo del mismo sitio: la barra se quedaba clavada en 0 %.
+  ///
+  /// `_currentLocator()` interrogaba al ScrollController desde `dispose()`,
+  /// pero para entonces el ListView ya está desmontado y su posición
+  /// desacoplada, así que siempre devolvía el inicio del fragmento.
+  group('progreso de lectura', () {
+    Future<double> progresoTras(WidgetTester tester) async {
+      final guardado = await tester.runAsync(() => services.repository.byId(1));
+      return guardado!.progress;
+    }
+
+    testWidgets('un texto que cabe en pantalla se marca como leído entero',
+        (tester) async {
+      // Un solo párrafo: cabe de sobra en la pantalla de prueba y no genera
+      // desplazamiento alguno.
+      final book = await prepararLibro(tester, parrafos: 1);
+      await abrirLector(tester, book);
+
+      ahora = ahora.add(const Duration(minutes: 9));
+      await cerrarLector(tester);
+
+      expect(
+        await progresoTras(tester),
+        1.0,
+        reason: 'si no hay nada que desplazar, se ha visto todo',
+      );
+    });
+
+    testWidgets('desplazarse hasta el final del fragmento cuenta como avance',
+        (tester) async {
+      final book = await prepararLibro(tester);
+      await abrirLector(tester, book);
+
+      await tester.drag(find.byType(ListView), const Offset(0, -30000));
+      await tester.pump();
+
+      ahora = ahora.add(const Duration(minutes: 9));
+      await cerrarLector(tester);
+
+      expect(
+        await progresoTras(tester),
+        greaterThan(0.15),
+        reason: 'el fragmento leído es una parte apreciable del libro',
+      );
+    });
+
+    testWidgets('leer sin moverse deja el progreso donde estaba, no lo inventa',
+        (tester) async {
+      final book = await prepararLibro(tester);
+      await abrirLector(tester, book);
+
+      ahora = ahora.add(const Duration(minutes: 9));
+      await cerrarLector(tester);
+
+      expect(
+        await progresoTras(tester),
+        0.0,
+        reason: 'en la primera pantalla de un libro largo aún no hay avance',
+      );
+    });
+
+    testWidgets('retomar un libro no lo devuelve al principio del fragmento',
+        (tester) async {
+      // Guardada una posición a mitad del primer fragmento.
+      const guardada = CharLocator(10000);
+      final book = await prepararLibro(tester, locator: guardada);
+      await abrirLector(tester, book);
+
+      // Se sale sin tocar nada: la posición debe sobrevivir casi intacta.
+      ahora = ahora.add(const Duration(minutes: 1));
+      await cerrarLector(tester);
+
+      final despues = await tester.runAsync(() => services.repository.byId(1));
+      final locator = despues!.locator;
+      expect(locator, isA<CharLocator>());
+      expect(
+        (locator! as CharLocator).charOffset,
+        closeTo(10000, 1500),
+        reason: 'antes aterrizaba en 0 y había que buscar por dónde ibas',
+      );
+    });
   });
 }
