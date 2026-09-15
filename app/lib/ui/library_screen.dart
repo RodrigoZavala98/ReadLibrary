@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import '../app_services.dart';
 import '../core/theme/app_theme.dart';
 import '../data/book_importer.dart';
-import '../domain/book_format.dart';
 import '../domain/library_book.dart';
 import 'reader_screen.dart';
 
@@ -41,12 +40,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final picked = await FilePicker.pickFile(
         dialogTitle: 'Elige un libro',
-        type: FileType.custom,
-        // Se ofrecen también los formatos aún no soportados: es mejor que el
-        // usuario los vea y reciba una explicación a que parezcan invisibles.
-        allowedExtensions: [
-          for (final format in BookFormat.values) ...format.extensions,
-        ],
+        // Sin filtro del sistema **a propósito**, filtrando nosotros después.
+        //
+        // El selector de Android construye su filtro traduciendo cada
+        // extensión a un tipo MIME, y la extensión que el sistema no sabe
+        // traducir se cae de la lista sin avisar: sus ficheros salen en gris y
+        // no hay manera de elegirlos. Eso dejaba los EPUB inalcanzables, y con
+        // ellos los CBZ y los FB2. Aunque la traducción funcione, tampoco
+        // bastaría: Descargas y Drive declaran muchos libros como
+        // application/octet-stream, que no casa con ningún filtro por formato.
+        //
+        // Enseñarlo todo y explicar después es además lo que ya se quería
+        // hacer: el importador reconoce el formato por el nombre y responde
+        // con un motivo concreto a lo que no sabe abrir, en vez de dejar el
+        // fichero invisible y al usuario sin saber por qué.
+        type: FileType.any,
       );
       final path = picked?.path;
       if (path == null) return;

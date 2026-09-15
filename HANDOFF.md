@@ -260,6 +260,21 @@ de desarrollo en UTC−6: una prueba que dependa de la hora pasa en un sitio y
 falla en el otro. Ya ocurrió dos veces. El workflow ahora repite la suite bajo
 UTC+14 para delatarlo.
 
+### Una trampa de Android que no se ve en las pruebas
+
+**El selector de ficheros filtra por tipo MIME, no por extensión.** Al pedirle
+`FileType.custom` con una lista de extensiones, el plugin traduce cada una con
+`MimeTypeMap` y **descarta sin avisar la que el sistema no sabe traducir**: sus
+ficheros aparecen en gris y no hay forma de elegirlos. Eso dejó los EPUB
+inalcanzables en el primer APK que los soportaba, con el lector ya terminado y
+probado. Ahora el selector no filtra —`FileType.any`— y filtra el importador,
+que además sabe explicar lo que no reconoce.
+
+No hay prueba que cubra esto: la llamada al selector es una llamada estática a
+la plataforma. Lo que sí está cubierto es la red de debajo, que es la que lo
+hace seguro: el importador responde con un motivo a un fichero que no es un
+libro.
+
 ### Y dos trampas del propio Flutter
 
 **No llames a `AppScope.of(context)` desde `dispose()`.** Por debajo usa
