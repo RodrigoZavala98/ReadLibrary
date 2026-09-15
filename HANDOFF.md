@@ -122,8 +122,7 @@ para que un corte a mitad no deje la biblioteca truncada.
 - **Registro de lectura**: cronómetro que cuenta tiempo delante del libro, no
   tiempo con el libro abierto.
 
-**309 pruebas**, análisis estático limpio. Todo verificado en dispositivo real
-salvo EPUB, pendiente del próximo APK.
+**309 pruebas**, análisis estático limpio. Todo verificado en dispositivo real.
 
 ---
 
