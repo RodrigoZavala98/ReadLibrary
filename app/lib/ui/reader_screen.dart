@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 
 import '../app_services.dart';
 import '../core/theme/app_theme.dart';
@@ -11,9 +12,12 @@ import '../domain/book_locator.dart';
 import '../domain/book_source.dart';
 import '../domain/library_book.dart';
 import '../domain/reading_clock.dart';
+import '../domain/reading_settings.dart';
 import '../formats/epub_book_source.dart';
 import '../formats/txt_book_source.dart';
+import 'chapters_sheet.dart';
 import 'html_view.dart';
+import 'reading_settings_sheet.dart';
 import 'rich_html.dart';
 
 /// La pantalla de lectura.
@@ -53,7 +57,17 @@ class _ReaderScreenState extends State<ReaderScreen>
   String? _error;
   bool _chromeVisible = false;
 
-  final _style = const ReadingStyle();
+  /// Tema, tipografía y medidas. Se cargan del disco al entrar y se guardan en
+  /// cuanto se tocan.
+  ReadingSettings _settings = ReadingSettings();
+
+  /// Avance dentro del libro entero, de 0 a 1.
+  ///
+  /// Va en un `ValueNotifier` y no en el estado del widget a propósito: se
+  /// actualiza en cada fotograma de desplazamiento, y llamar a `setState` tan a
+  /// menudo reconstruiría el capítulo entero —con sus imágenes— sesenta veces
+  /// por segundo. Así sólo se repinta el hilo del margen.
+  final _progress = ValueNotifier<double>(0);
 
   /// Hasta dónde se ha avanzado dentro del fragmento actual, de 0 a 1.
   ///
@@ -88,13 +102,22 @@ class _ReaderScreenState extends State<ReaderScreen>
     WidgetsBinding.instance.addObserver(this);
     _scroll.addListener(_rememberPosition);
     _clock.start(widget.now());
-    _load();
   }
+
+  /// La carga no arranca en `initState` sino en cuanto hay servicios.
+  ///
+  /// Antes sí lo hacía, porque sólo necesitaba la ruta del fichero. Ahora
+  /// necesita también los ajustes de lectura, y esos vienen del `AppScope`, que
+  /// en `initState` todavía no se puede consultar: hacerlo lanza «dependOn...
+  /// called before initState completed». Con el testigo, la carga ocurre una
+  /// sola vez aunque las dependencias cambien.
+  bool _loading = false;
 
   /// Anota el avance dentro del fragmento actual.
   void _rememberPosition() {
     if (!_scroll.hasClients) return;
     final max = _scroll.position.maxScrollExtent;
+    _updateProgress();
     // Sin nada que desplazar, el fragmento entero está a la vista: se ha visto
     // hasta el final. Tratarlo como «estoy al principio» dejaría un texto corto
     // leído de cabo a rabo marcado al cero por ciento.
@@ -105,6 +128,10 @@ class _ReaderScreenState extends State<ReaderScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _services = AppScope.of(context);
+    if (!_loading) {
+      _loading = true;
+      unawaited(_load());
+    }
   }
 
   @override
@@ -116,7 +143,11 @@ class _ReaderScreenState extends State<ReaderScreen>
     // salida normal guarda antes de cerrar, no aquí.
     unawaited(_persistAll());
     _scroll.dispose();
+    _progress.dispose();
     _source?.dispose();
+    // El brillo vuelve al del sistema sí o sí: dejarlo bajado al salir del
+    // libro convertiría un ajuste de lectura en un fallo del teléfono.
+    unawaited(_restoreBrightness());
     super.dispose();
   }
 
@@ -177,7 +208,74 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
   }
 
+  /// Manda el brillo al sistema, o lo deja como estaba si el ajuste dice que
+  /// no opinamos.
+  ///
+  /// Todo lo de la pantalla va envuelto en `try`: es una llamada a la
+  /// plataforma, y hay fabricantes donde falla. Que no se pueda atenuar la
+  /// pantalla no puede impedir leer.
+  Future<void> _applyBrightness() async {
+    final wanted = _settings.brightness;
+    try {
+      if (wanted == null) {
+        await ScreenBrightness.instance.resetApplicationScreenBrightness();
+      } else {
+        await ScreenBrightness.instance.setApplicationScreenBrightness(wanted);
+      }
+    } on Object {
+      // Sin brillo ajustable se lee igual.
+    }
+  }
+
+  Future<void> _restoreBrightness() async {
+    try {
+      await ScreenBrightness.instance.resetApplicationScreenBrightness();
+    } on Object {
+      // Ídem.
+    }
+  }
+
+  Future<void> _openSettings() async {
+    await showReadingSettingsSheet(
+      context,
+      current: _settings,
+      onChanged: (next) {
+        setState(() => _settings = next);
+        // Se guarda en cada toque en lugar de al cerrar la hoja: si la
+        // aplicación muere con los ajustes abiertos, lo elegido ya está en el
+        // disco. Son escrituras de doscientos bytes.
+        unawaited(_services?.settings.save(next) ?? Future<void>.value());
+        unawaited(_applyBrightness());
+      },
+    );
+  }
+
+  Future<void> _openChapters() async {
+    final source = _source;
+    if (source == null) return;
+
+    final chosen = await showChaptersSheet(
+      context,
+      chapters: source.chapters,
+      current: _chapterIndex,
+      settings: _settings,
+    );
+    if (chosen != null) await _showChapter(chosen);
+  }
+
+  void _updateProgress() {
+    final source = _source;
+    if (source == null) return;
+    _progress.value = source.progressAt(_currentLocator());
+  }
+
   Future<void> _load() async {
+    final settings = await _services?.settings.load();
+    if (settings != null && mounted) {
+      setState(() => _settings = settings);
+      await _applyBrightness();
+    }
+
     final source = _sourceFor(widget.book);
     if (source == null) {
       setState(() {
@@ -192,6 +290,16 @@ class _ReaderScreenState extends State<ReaderScreen>
       await source.open();
     } on Object catch (error) {
       if (mounted) setState(() => _error = _explain(error));
+      return;
+    }
+
+    if (!mounted) {
+      // La pantalla se fue mientras el libro se abría. Hay que soltarlo aquí:
+      // `dispose()` ya pasó y no encontró ninguna fuente que cerrar, así que el
+      // descriptor del fichero se quedaría abierto durante toda la vida de la
+      // aplicación. En un EPUB eso es un ZIP abierto, y en Windows impide hasta
+      // borrar el fichero.
+      await source.dispose();
       return;
     }
 
@@ -263,7 +371,7 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   @override
   Widget build(BuildContext context) {
-    final surface = _style.surface;
+    final palette = _settings.palette;
 
     return PopScope(
       // Se bloquea el cierre automático para poder guardar antes de irnos.
@@ -272,18 +380,18 @@ class _ReaderScreenState extends State<ReaderScreen>
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) unawaited(_leave());
       },
-      child: _buildReader(surface),
+      child: _buildReader(palette),
     );
   }
 
-  Widget _buildReader(ReadingSurface surface) {
+  Widget _buildReader(ReadingPalette palette) {
     return Scaffold(
-      backgroundColor: surface.background,
+      backgroundColor: palette.background,
       body: SafeArea(
         child: Stack(
           children: [
             if (_error != null)
-              _ReaderMessage(text: _error!, surface: surface)
+              _ReaderMessage(text: _error!, palette: palette)
             else if (_source == null)
               const Center(child: CircularProgressIndicator())
             else
@@ -293,27 +401,36 @@ class _ReaderScreenState extends State<ReaderScreen>
                 child: ListView.builder(
                   controller: _scroll,
                   padding: EdgeInsets.fromLTRB(
-                    _style.margin,
+                    _settings.margin,
                     32,
-                    _style.margin,
+                    _settings.margin,
                     96,
                   ),
                   itemCount: _blocks.length,
                   itemBuilder: (_, i) => HtmlBlockView(
                     block: _blocks[i],
-                    style: _style,
+                    style: _settings,
                     imageFor: _imageFor,
                   ),
                 ),
               ),
+            // El avance se ve **siempre**, no sólo con los controles fuera.
+            // Es una revisión consciente del «dentro del libro no hay cromo»:
+            // saber por dónde vas era justo lo que faltaba, y un hilo de dos
+            // píxeles en el margen no compite con el texto.
+            if (_error == null && _source != null)
+              _ProgressHairline(progress: _progress, palette: palette),
             if (_chromeVisible || _error != null)
               _ReaderChrome(
                 title: widget.book.title,
-                surface: surface,
+                palette: palette,
                 chapterTitle: _chapterTitle,
                 chapterIndex: _chapterIndex,
                 chapterCount: _chapterCount,
                 onBack: () => unawaited(_leave()),
+                onChapters: _source == null ? null : _openChapters,
+                onSettings: _source == null ? null : _openSettings,
+                progress: _progress,
                 onPrevious: _chapterIndex > 0
                     ? () => _showChapter(_chapterIndex - 1)
                     : null,
@@ -329,10 +446,10 @@ class _ReaderScreenState extends State<ReaderScreen>
 }
 
 class _ReaderMessage extends StatelessWidget {
-  const _ReaderMessage({required this.text, required this.surface});
+  const _ReaderMessage({required this.text, required this.palette});
 
   final String text;
-  final ReadingSurface surface;
+  final ReadingPalette palette;
 
   @override
   Widget build(BuildContext context) {
@@ -342,7 +459,59 @@ class _ReaderMessage extends StatelessWidget {
         child: Text(
           text,
           textAlign: TextAlign.center,
-          style: TextStyle(color: surface.muted, height: 1.5),
+          style: TextStyle(color: palette.muted, height: 1.5),
+        ),
+      ),
+    );
+  }
+}
+
+/// El hilo de avance del borde inferior.
+///
+/// Escucha al `ValueNotifier` en lugar de recibir un número: así se repinta él
+/// solo mientras el dedo arrastra, sin reconstruir el capítulo.
+class _ProgressHairline extends StatelessWidget {
+  const _ProgressHairline({required this.progress, required this.palette});
+
+  final ValueListenable<double> progress;
+  final ReadingPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: IgnorePointer(
+        child: ValueListenableBuilder<double>(
+          valueListenable: progress,
+          builder: (_, value, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 12, bottom: 4),
+                child: Text(
+                  '${(value * 100).round()} %',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: palette.muted.withValues(alpha: 0.7),
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 2,
+                child: LinearProgressIndicator(
+                  value: value,
+                  minHeight: 2,
+                  backgroundColor: palette.muted.withValues(alpha: 0.15),
+                  valueColor: AlwaysStoppedAnimation(
+                    palette.muted.withValues(alpha: 0.55),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -353,39 +522,48 @@ class _ReaderMessage extends StatelessWidget {
 class _ReaderChrome extends StatelessWidget {
   const _ReaderChrome({
     required this.title,
-    required this.surface,
+    required this.palette,
     required this.chapterTitle,
     required this.chapterIndex,
     required this.chapterCount,
+    required this.progress,
     required this.onBack,
+    this.onChapters,
+    this.onSettings,
     this.onPrevious,
     this.onNext,
   });
 
   final String title;
-  final ReadingSurface surface;
+  final ReadingPalette palette;
+
   /// «Parte 3» en un TXT; el título real del capítulo en un EPUB que lo traiga.
   final String chapterTitle;
 
   final int chapterIndex;
   final int chapterCount;
+  final ValueListenable<double> progress;
   final VoidCallback onBack;
+  final VoidCallback? onChapters;
+  final VoidCallback? onSettings;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
 
   @override
   Widget build(BuildContext context) {
+    final bar = palette.background.withValues(alpha: 0.96);
+
     return Column(
       children: [
         Container(
-          color: surface.background.withValues(alpha: 0.96),
+          color: bar,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           child: Row(
             children: [
               IconButton(
                 onPressed: onBack,
                 icon: const Icon(Icons.arrow_back),
-                color: surface.text,
+                color: palette.text,
                 tooltip: 'Volver a la biblioteca',
               ),
               Expanded(
@@ -394,26 +572,40 @@ class _ReaderChrome extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: surface.text,
+                    color: palette.text,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+              ),
+              IconButton(
+                onPressed: onChapters,
+                icon: const Icon(Icons.list),
+                color: palette.text,
+                disabledColor: palette.muted.withValues(alpha: 0.4),
+                tooltip: 'Índice',
+              ),
+              IconButton(
+                onPressed: onSettings,
+                icon: const Icon(Icons.text_fields),
+                color: palette.text,
+                disabledColor: palette.muted.withValues(alpha: 0.4),
+                tooltip: 'Ajustes de lectura',
               ),
             ],
           ),
         ),
         const Spacer(),
         Container(
-          color: surface.background.withValues(alpha: 0.96),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          color: bar,
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
                 onPressed: onPrevious,
                 icon: const Icon(Icons.chevron_left),
-                color: surface.text,
-                disabledColor: surface.muted.withValues(alpha: 0.4),
+                color: palette.text,
+                disabledColor: palette.muted.withValues(alpha: 0.4),
                 tooltip: 'Capítulo anterior',
               ),
               Flexible(
@@ -425,11 +617,15 @@ class _ReaderChrome extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: surface.text, fontSize: 13),
+                      style: TextStyle(color: palette.text, fontSize: 13),
                     ),
-                    Text(
-                      '${chapterIndex + 1} de $chapterCount',
-                      style: TextStyle(color: surface.muted, fontSize: 11),
+                    ValueListenableBuilder<double>(
+                      valueListenable: progress,
+                      builder: (_, value, _) => Text(
+                        'Capítulo ${chapterIndex + 1} de $chapterCount  ·  '
+                        '${(value * 100).round()} % del libro',
+                        style: TextStyle(color: palette.muted, fontSize: 11),
+                      ),
                     ),
                   ],
                 ),
@@ -437,8 +633,8 @@ class _ReaderChrome extends StatelessWidget {
               IconButton(
                 onPressed: onNext,
                 icon: const Icon(Icons.chevron_right),
-                color: surface.text,
-                disabledColor: surface.muted.withValues(alpha: 0.4),
+                color: palette.text,
+                disabledColor: palette.muted.withValues(alpha: 0.4),
                 tooltip: 'Capítulo siguiente',
               ),
             ],

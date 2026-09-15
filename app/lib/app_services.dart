@@ -8,6 +8,7 @@ import 'data/json_library_repository.dart';
 import 'data/library_repository.dart';
 import 'data/profile_store.dart';
 import 'data/session_store.dart';
+import 'data/settings_store.dart';
 
 /// Las dependencias de la aplicación, construidas una vez al arrancar.
 ///
@@ -19,12 +20,14 @@ class AppServices {
     required this.importer,
     required this.sessions,
     required this.profile,
+    required this.settings,
   });
 
   final LibraryRepository repository;
   final BookImporter importer;
   final SessionStore sessions;
   final ProfileStore profile;
+  final SettingsStore settings;
 
   /// Monta los servicios sobre el almacenamiento privado de la aplicación.
   ///
@@ -50,6 +53,7 @@ class AppServices {
       ),
       sessions: SessionStore(File('${root.path}${sep}sessions.json')),
       profile: ProfileStore(File('${root.path}${sep}profile.json')),
+      settings: SettingsStore(File('${root.path}${sep}reading.json')),
     );
   }
 }

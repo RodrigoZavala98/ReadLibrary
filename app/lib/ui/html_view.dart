@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
+import '../domain/reading_settings.dart';
 import 'rich_html.dart';
 
 /// De dónde salen los bytes de una imagen del capítulo. `null` si no está.
@@ -11,9 +12,9 @@ typedef ImageResolver = Uint8List? Function(String src);
 /// Pinta un bloque de [RichHtml] con la tipografía del lector.
 ///
 /// El reparto es deliberado: [RichHtml] decide **qué** hay —y eso se prueba sin
-/// pintar nada— y este widget decide **cómo se ve**, aplicando el
-/// [ReadingStyle] que el usuario controla. El HTML no manda aquí: un EPUB con
-/// su hoja de estilos se ve con la tipografía del lector, no con la suya.
+/// pintar nada— y este widget decide **cómo se ve**, aplicando los
+/// [ReadingSettings] que el usuario controla. El HTML no manda aquí: un EPUB
+/// con su hoja de estilos se ve con la tipografía del lector, no con la suya.
 class HtmlBlockView extends StatelessWidget {
   const HtmlBlockView({
     required this.block,
@@ -23,7 +24,7 @@ class HtmlBlockView extends StatelessWidget {
   });
 
   final HtmlBlock block;
-  final ReadingStyle style;
+  final ReadingSettings style;
   final ImageResolver? imageFor;
 
   @override
@@ -48,7 +49,7 @@ class HtmlBlockView extends StatelessWidget {
         child: Divider(
           height: 1,
           thickness: 1,
-          color: style.surface.muted.withValues(alpha: 0.35),
+          color: style.palette.muted.withValues(alpha: 0.35),
         ),
       ),
       HtmlImage(:final src, :final alt) => _image(src, alt),
@@ -94,7 +95,7 @@ class HtmlBlockView extends StatelessWidget {
           // móvil es lo más escaso que hay.
           border: Border(
             left: BorderSide(
-              color: style.surface.muted.withValues(alpha: 0.45),
+              color: style.palette.muted.withValues(alpha: 0.45),
               width: 3,
             ),
           ),
@@ -104,7 +105,7 @@ class HtmlBlockView extends StatelessWidget {
             runs,
             style.toTextStyle().copyWith(
               fontStyle: FontStyle.italic,
-              color: style.surface.muted,
+              color: style.palette.muted,
             ),
           ),
         ),
@@ -122,7 +123,7 @@ class HtmlBlockView extends StatelessWidget {
             width: 26,
             child: Text(
               marker,
-              style: style.toTextStyle().copyWith(color: style.surface.muted),
+              style: style.toTextStyle().copyWith(color: style.palette.muted),
             ),
           ),
           Expanded(child: Text.rich(_spanOf(runs, style.toTextStyle()))),
@@ -175,7 +176,7 @@ class HtmlBlockView extends StatelessWidget {
         style: style.toTextStyle().copyWith(
           fontStyle: FontStyle.italic,
           fontSize: style.fontSize * 0.9,
-          color: style.surface.muted,
+          color: style.palette.muted,
         ),
       ),
     );

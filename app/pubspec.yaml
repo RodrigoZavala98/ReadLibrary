@@ -45,6 +45,11 @@ dependencies:
   html: ^0.15.7
   xml: ^7.0.1
 
+  # Brillo de pantalla desde el lector. Ajusta el de la ventana de la
+  # aplicación, no el del sistema, así que no pide ningún permiso y se deshace
+  # solo al salir.
+  screen_brightness: ^2.1.11
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -66,6 +71,31 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Dos familias incrustadas, unos 250 KB entre las seis.
+  #
+  # Van dentro del APK y no se piden a ninguna parte: la aplicación funciona sin
+  # conexión, y `google_fonts` las descargaría en caliente. La serif que importa
+  # es Literata —diseñada para leer— y va incrustada a propósito: fiarlo al
+  # alias «serif» del sistema repetiría el fallo de Georgia en cuanto un
+  # fabricante no lo declare.
+  #
+  # Licencias OFL junto a los ficheros, en assets/fonts/.
+  fonts:
+    - family: Literata
+      fonts:
+        - asset: assets/fonts/Literata-Regular.ttf
+        - asset: assets/fonts/Literata-Italic.ttf
+          style: italic
+        - asset: assets/fonts/Literata-Bold.ttf
+          weight: 700
+    - family: Open Sans
+      fonts:
+        - asset: assets/fonts/OpenSans-Regular.ttf
+        - asset: assets/fonts/OpenSans-Italic.ttf
+          style: italic
+        - asset: assets/fonts/OpenSans-Bold.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:

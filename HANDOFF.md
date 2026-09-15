@@ -1,7 +1,7 @@
 # Lector — traspaso de contexto
 
-Estado a **14 de septiembre de 2026**, commit «EPUB: analizador propio,
-renderizador de XHTML y lector generalizado».
+Estado a **14 de septiembre de 2026**, commit «Ajustes de lectura, índice y
+avance visible».
 Repositorio: <https://github.com/RodrigoZavala98/ReadLibrary> (**público**).
 
 Aplicación Android de lectura de libros, escrita en Flutter, **completamente
@@ -113,6 +113,10 @@ para que un corte a mitad no deje la biblioteca truncada.
   los capítulos, y los EPUB con DRM rechazados con una explicación.
 - **La posición sobrevive** a cerrar la aplicación, y retomar un libro te deja
   dentro del fragmento donde estabas.
+- **Ajustes de lectura**: cuatro temas, cinco tipografías —dos incrustadas—,
+  tamaño, interlineado, margen y brillo, aplicados en vivo y guardados solos.
+- **Índice y avance**: el índice de capítulos desde dentro del libro, y el
+  porcentaje leído siempre a la vista en el margen.
 - **Mi Refugio**: saludo personalizado, anillo de racha, aviso cuando está en
   riesgo, tarjeta de continuar leyendo.
 - **Mi Viaje**: calendario del mes con la intensidad de cada día, navegable
@@ -122,7 +126,8 @@ para que un corte a mitad no deje la biblioteca truncada.
 - **Registro de lectura**: cronómetro que cuenta tiempo delante del libro, no
   tiempo con el libro abierto.
 
-**309 pruebas**, análisis estático limpio. Todo verificado en dispositivo real.
+**353 pruebas**, análisis estático limpio. Todo verificado en dispositivo real
+salvo los ajustes de lectura, pendientes del próximo APK.
 
 ---
 
@@ -147,9 +152,6 @@ selección de texto en el lector, persistir, y la pantalla de la sección.
 
 - Portadas reales (hoy hay una tarjeta con la inicial) → `palette_generator` para
   el color dominante.
-- Ajustes de lectura: `ReadingStyle` existe con tamaño, interlineado, serifa y
-  superficie (papel / sepia / noche), pero está fijado al valor por defecto y no
-  hay interfaz para cambiarlo.
 - Notificaciones: `ReaderProfile.reminder` existe pero nada lo programa.
   `flutter_local_notifications` 22.3.1. **Usa programación inexacta** para no
   pedir `SCHEDULE_EXACT_ALARM`, que Google Play audita; un aviso de lectura no
@@ -193,6 +195,9 @@ pueda mostrarlos en gris y **explicar** en vez de fallar.
 3. **Dos mundos visuales.** Alrededor de la lectura, índigo nocturno con
    tipografía sans. Dentro del libro, papel cálido con serifa y sin cromo. Se
    descartaron glassmorphism y neumorfismo: caros de renderizar y desfasados.
+   **Matizado**: lo de «sin cromo» excluye ahora un hilo de dos píxeles y un
+   porcentaje diminuto en el margen inferior. Saber por dónde vas era justo lo
+   que faltaba, y esconderlo del todo resultó ser purismo.
 4. **Nada de `BackdropFilter` animado a pantalla completa** — es de lo más caro
    que hay en Flutter y se nota en gama media. Para el fondo dinámico, degradado
    **precalculado** desde el color de la portada.
@@ -223,7 +228,15 @@ pueda mostrarlos en gris y **explicar** en vez de fallar.
 12. **La posición en un EPUB es documento del lomo + milésimas**, no un CFI. Un
     CFI se genera contra el DOM de Epub.js; sin ese motor no lo sabría
     interpretar nadie.
-13. **`applicationId` = `com.readlibrary.lector`.** Era `com.uif37020.lector` —
+13. **Los ajustes de lectura son globales, no por libro.** El comentario del
+    antiguo `ReadingStyle` decía lo contrario —«no se lee igual una novela que
+    un manual»—, pero nunca se implementó, y cumplirlo obliga a reajustar la
+    tipografía entera en cada libro nuevo. Quien afina su cuerpo de letra lo
+    hace una vez.
+14. **Las dos tipografías de lectura van incrustadas** (Literata y Open Sans,
+    unos 250 KB). No se depende del alias «serif» del sistema para la serif
+    principal: de eso venía el fallo de Georgia.
+15. **`applicationId` = `com.readlibrary.lector`.** Era `com.uif37020.lector` —
     el número de empleado — y es **permanente** una vez publicas en Play. No lo
     cambies otra vez.
 
@@ -258,6 +271,17 @@ transición entre rutas no llegan a terminar.
 de desarrollo en UTC−6: una prueba que dependa de la hora pasa en un sitio y
 falla en el otro. Ya ocurrió dos veces. El workflow ahora repite la suite bajo
 UTC+14 para delatarlo.
+
+### Otra trampa de Android: una fuente que no está no avisa
+
+`app_theme.dart` pedía `fontFamily: 'Georgia'` desde el primer commit. Georgia
+es de Microsoft y no existe en Android: Flutter no la encontraba, caía a la de
+por defecto **en silencio**, y el modo «con serifa» nunca tuvo serifa durante
+todo el proyecto. Nadie lo vio porque no hay error, ni registro, ni diferencia
+visible salvo que sepas qué estás buscando.
+
+De ahí que la serif buena vaya incrustada, y que `app_theme_test.dart` tenga una
+prueba que dice exactamente «ninguna fuente pide Georgia».
 
 ### Una trampa de Android que no se ve en las pruebas
 
@@ -301,6 +325,9 @@ posición está desacoplada. Anota el avance mientras el widget vive.
 - **El APK de depuración pesa 74 MB.** Un *release* firmado bajaría a 15–20 MB, y
   dividiendo por arquitectura a menos de 10.
 - **No se extraen portadas** de los ficheros todavía.
+- **El brillo de pantalla no tiene prueba**: es un canal a la plataforma. Lo que
+  sí está probado es que el ajuste se guarda y se lee. Va envuelto en `try` para
+  que un fabricante que no lo soporte no impida leer.
 - **Dentro de un capítulo de EPUB la posición es una fracción**, no un punto del
   texto: devuelve a la misma pantalla, no a la misma palabra. El tramo sobre el
   que aproxima es un capítulo, del mismo orden que el fragmento sobre el que ya

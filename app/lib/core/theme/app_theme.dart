@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../domain/reading_settings.dart';
+
 /// El tema de la aplicación parte de una idea: **hay dos mundos**.
 ///
 /// Alrededor de la lectura —biblioteca, estadísticas, ajustes— todo vive en un
@@ -59,34 +61,14 @@ abstract final class ChromeTheme {
   }
 }
 
-/// Las tres superficies de lectura posibles.
+
+/// Los colores de una superficie de lectura.
 ///
-/// Papel y sepia existen porque leer texto blanco sobre negro cansa la vista en
-/// sesiones largas; noche existe porque leer blanco sobre crema a oscuras
-/// deslumbra. Ninguna de las tres es prescindible.
-enum ReadingSurface {
-  /// Crema. Imita papel bajo luz de día.
-  paper(
-    background: Color(0xFFF5EFE3),
-    text: Color(0xFF23201B),
-    muted: Color(0xFF6B6458),
-  ),
-
-  /// Sepia. Menos contraste, más cálido, para sesiones largas.
-  sepia(
-    background: Color(0xFFEADBC0),
-    text: Color(0xFF3A2E1E),
-    muted: Color(0xFF7A6748),
-  ),
-
-  /// Noche. Negro real —no gris— para que en pantallas OLED el texto flote.
-  night(
-    background: Color(0xFF0D0D0F),
-    text: Color(0xFFD8D4CC),
-    muted: Color(0xFF807C74),
-  );
-
-  const ReadingSurface({
+/// Es la mitad de interfaz de [ReadingTheme], que vive en el dominio y sólo
+/// sabe cuántos temas hay y cómo se llaman. Los colores están aquí porque
+/// `Color` es de Flutter y `domain/` no conoce Flutter.
+class ReadingPalette {
+  const ReadingPalette({
     required this.background,
     required this.text,
     required this.muted,
@@ -94,54 +76,73 @@ enum ReadingSurface {
 
   final Color background;
   final Color text;
+
+  /// Para lo secundario: citas, notas al pie, el avance del margen.
   final Color muted;
+
+  static ReadingPalette of(ReadingTheme theme) => switch (theme) {
+    // Crema. Imita papel bajo luz de día.
+    ReadingTheme.claro => const ReadingPalette(
+      background: Color(0xFFF5EFE3),
+      text: Color(0xFF23201B),
+      muted: Color(0xFF6B6458),
+    ),
+
+    // Menos contraste, más cálido, para sesiones largas.
+    ReadingTheme.sepia => const ReadingPalette(
+      background: Color(0xFFEADBC0),
+      text: Color(0xFF3A2E1E),
+      muted: Color(0xFF7A6748),
+    ),
+
+    // Negro real —no gris— para que en pantallas OLED el texto flote.
+    ReadingTheme.oscuro => const ReadingPalette(
+      background: Color(0xFF0D0D0F),
+      text: Color(0xFFD8D4CC),
+      muted: Color(0xFF807C74),
+    ),
+
+    // Blanco y negro puros. No es una variante estética del claro: es el
+    // máximo contraste que puede dar una pantalla, y para quien lo necesita
+    // el crema del papel ya es insuficiente.
+    ReadingTheme.altoContraste => const ReadingPalette(
+      background: Color(0xFFFFFFFF),
+      text: Color(0xFF000000),
+      muted: Color(0xFF555555),
+    ),
+  };
 }
 
-/// Ajustes tipográficos del lector, los que el usuario controla desde la
-/// píldora flotante.
-class ReadingStyle {
-  const ReadingStyle({
-    this.surface = ReadingSurface.paper,
-    this.fontSize = 19,
-    this.lineHeight = 1.6,
-    this.serif = true,
-    this.margin = 24,
-  });
+/// Convierte los ajustes del usuario en tipografía y color.
+///
+/// Va como extensión para que el dominio siga sin saber de Flutter y la
+/// interfaz siga escribiendo `settings.toTextStyle()`, que es lo natural donde
+/// se usa.
+extension ReadingSettingsStyle on ReadingSettings {
+  ReadingPalette get palette => ReadingPalette.of(theme);
 
-  final ReadingSurface surface;
-  final double fontSize;
-
-  /// Múltiplo del tamaño de fuente, no píxeles absolutos.
-  final double lineHeight;
-
-  /// Con serifa para narrativa, sin ella para documentación técnica. La
-  /// preferencia se guarda por libro, no global: no se lee igual una novela
-  /// que un manual.
-  final bool serif;
-
-  /// Margen horizontal en puntos lógicos.
-  final double margin;
+  /// La familia tipográfica que hay que pedirle a Flutter.
+  ///
+  /// Aquí estuvo un fallo que duró todo el proyecto: se pedía `'Georgia'`, que
+  /// es una fuente de Microsoft y no existe en Android. Flutter no la
+  /// encontraba y caía a la de por defecto, así que el modo «con serifa» nunca
+  /// tuvo serifa. De ahí que la serif buena —Literata— vaya **incrustada** en
+  /// el APK en lugar de pedírsela al sistema: una familia que no está no avisa,
+  /// simplemente se ve distinta de lo que dice el código.
+  String get fontFamily => switch (font) {
+    ReadingFont.roboto => 'Roboto',
+    ReadingFont.openSans => 'Open Sans',
+    ReadingFont.literata => 'Literata',
+    // Alias que Android resuelve a Noto Serif. Va como opción extra, nunca
+    // como la serif principal, justamente porque depende del fabricante.
+    ReadingFont.serifDelSistema => 'serif',
+    ReadingFont.monoespaciada => 'monospace',
+  };
 
   TextStyle toTextStyle() => TextStyle(
     fontSize: fontSize,
     height: lineHeight,
-    color: surface.text,
-    fontFamily: serif ? 'Georgia' : null,
+    color: palette.text,
+    fontFamily: fontFamily,
   );
-
-  ReadingStyle copyWith({
-    ReadingSurface? surface,
-    double? fontSize,
-    double? lineHeight,
-    bool? serif,
-    double? margin,
-  }) {
-    return ReadingStyle(
-      surface: surface ?? this.surface,
-      fontSize: fontSize ?? this.fontSize,
-      lineHeight: lineHeight ?? this.lineHeight,
-      serif: serif ?? this.serif,
-      margin: margin ?? this.margin,
-    );
-  }
 }

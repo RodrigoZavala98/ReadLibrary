@@ -359,7 +359,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('El principio'), findsOneWidget);
-      expect(find.text('1 de 2'), findsOneWidget);
+      expect(find.textContaining('Capítulo 1 de 2'), findsOneWidget);
     });
 
     testWidgets('pasar de capítulo y salir guarda dónde se estaba',
@@ -395,6 +395,40 @@ void main() {
 
       expect(find.textContaining('Última página'), findsOneWidget);
       expect(find.textContaining('Primera página'), findsNothing);
+    });
+
+    testWidgets('salir mientras el libro se abre no deja el fichero abierto',
+        (tester) async {
+      // Regresión. Abrir el EPUB pasa por varios turnos asíncronos —ajustes,
+      // ZIP, índice—, y si la pantalla se va en medio, `dispose()` no encuentra
+      // todavía ninguna fuente que cerrar. El descriptor se quedaba abierto
+      // para toda la vida de la aplicación.
+      //
+      // Se comprueba borrando el fichero, que es lo que Windows prohíbe
+      // mientras algo lo tiene abierto. En Linux —donde corre la integración
+      // continua— borrar un fichero abierto sí funciona, así que allí esta
+      // prueba no muerde: es de las que sólo caza el equipo de desarrollo.
+      final book = await prepararEpub(tester);
+
+      await tester.runAsync(
+        () => tester.pumpWidget(
+          AppScope(
+            services: services,
+            child: MaterialApp(
+              home: ReaderScreen(book: book, now: () => ahora),
+            ),
+          ),
+        ),
+      );
+      // Un solo fotograma: lo justo para que arranque la carga y no para que
+      // termine.
+      await tester.pump();
+      await cerrarLector(tester);
+
+      await tester.runAsync(() async {
+        await File(book.filePath).delete();
+      });
+      expect(File(book.filePath).existsSync(), isFalse);
     });
 
     testWidgets('un EPUB con DRM lo explica en lugar de fallar en silencio',
