@@ -31,14 +31,19 @@ void main() {
     if (temp.existsSync()) await temp.delete(recursive: true);
   });
 
+  /// Alterna fotogramas con tiempo real hasta que todo se estabiliza.
+  ///
+  /// Los `pump` llevan duración a propósito: sin ella el reloj simulado no
+  /// avanza y las animaciones de transición entre rutas no llegan a terminar,
+  /// dejando el Navigator a medias.
   Future<void> asentar(WidgetTester tester) async {
     for (var i = 0; i < 10; i++) {
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 20)),
       );
     }
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
   }
 
   Future<LibraryBook> prepararLibro(
@@ -91,6 +96,68 @@ void main() {
     );
     await asentar(tester);
   }
+
+  testWidgets('salir y desmontar guarda una sola sesión, no dos',
+      (tester) async {
+    // La salida ordenada guarda antes de cerrar, y dispose() mantiene además
+    // un guardado de reserva. Sin el testigo que los coordina, la sesión se
+    // registraría dos veces y el tiempo del día saldría al doble.
+    final book = await prepararLibro(tester);
+
+    await tester.runAsync(
+      () => tester.pumpWidget(
+        AppScope(
+          services: services,
+          child: MaterialApp(
+            theme: ChromeTheme.build(),
+            home: Builder(
+              builder: (ctx) => TextButton(
+                onPressed: () => Navigator.of(ctx).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ReaderScreen(book: book, now: () => ahora),
+                  ),
+                ),
+                child: const Text('abrir'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await asentar(tester);
+
+    await tester.tap(find.text('abrir'));
+    await asentar(tester);
+    expect(find.byType(ReaderScreen), findsOneWidget);
+
+    ahora = ahora.add(const Duration(minutes: 9));
+
+    // Salida por el botón de la barra, que dispara la salida ordenada y, tras
+    // ella, el desmontaje de la ruta. Los controles están ocultos hasta tocar
+    // el centro de la pantalla.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(ReaderScreen),
+        matching: find.byType(ListView),
+      ),
+    );
+    await tester.pump();
+
+    // El toque va dentro de `runAsync` a propósito. La salida encadena varias
+    // escrituras en disco, y cada una necesita una ventana de tiempo real para
+    // completarse; disparándola desde la zona de reloj simulado se queda a
+    // medias y la sesión nunca llega a guardarse. En el dispositivo real no
+    // existe esa zona y la cadena corre entera.
+    await tester.runAsync(() async {
+      await tester.tap(find.byTooltip('Volver a la biblioteca'));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await asentar(tester);
+
+    final sesiones = await tester.runAsync(services.sessions.loadAll);
+    expect(sesiones, hasLength(1));
+    expect(sesiones!.single.duration, const Duration(minutes: 9));
+  });
 
   testWidgets('el libro se abre y muestra su texto', (tester) async {
     final book = await prepararLibro(tester);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -52,6 +53,15 @@ class _ReaderScreenState extends State<ReaderScreen>
   /// desacoplada. El valor leído sería siempre cero.
   double _lastFraction = 0;
 
+  /// Evita guardar dos veces.
+  ///
+  /// Lo normal es persistir al salir, de forma esperada, para que la
+  /// biblioteca ya encuentre los datos frescos al recargar. Pero [dispose]
+  /// mantiene un guardado de reserva por si la pantalla desaparece sin pasar
+  /// por ahí, y sin este testigo la sesión de lectura se registraría dos veces
+  /// y el día contaría doble.
+  bool _persisted = false;
+
   /// Los servicios, capturados mientras el widget está vivo.
   ///
   /// No se puede llamar a `AppScope.of(context)` desde [dispose]: por debajo
@@ -89,13 +99,53 @@ class _ReaderScreenState extends State<ReaderScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    // Se guarda aquí y no en cada desplazamiento: escribir el índice entero en
-    // disco docenas de veces por minuto sería desperdiciar batería para nada.
-    _persistPosition();
-    _persistSession();
+    // Red de seguridad: si la pantalla se va sin pasar por _leave, se intenta
+    // guardar igualmente. Aquí no se puede esperar al resultado, así que es
+    // «dispara y olvida» y la biblioteca podría no verlo a tiempo. Por eso la
+    // salida normal guarda antes de cerrar, no aquí.
+    unawaited(_persistAll());
     _scroll.dispose();
     _source?.dispose();
     super.dispose();
+  }
+
+  /// Guarda posición y sesión. Idempotente.
+  Future<void> _persistAll() async {
+    if (_persisted) return;
+    _persisted = true;
+
+    final services = _services;
+    if (services == null) return;
+
+    final source = _source;
+    if (source != null) {
+      final locator = _currentLocator();
+      await services.repository.save(
+        widget.book.copyWith(
+          locator: locator,
+          progress: source.progressAt(locator),
+          lastOpenedAt: widget.now(),
+        ),
+      );
+    }
+
+    final session = _clock.toSession(
+      bookId: widget.book.id,
+      now: widget.now(),
+    );
+    // `null` cuando se abrió el libro y se salió enseguida: no ensucia el
+    // historial ni regala días de racha.
+    if (session != null) await services.sessions.add(session);
+  }
+
+  /// Salida ordenada: primero se guarda, después se cierra.
+  ///
+  /// El orden es lo que arregla que la biblioteca mostrara el avance anterior
+  /// hasta cambiar de pestaña y volver: recargaba antes de que el guardado
+  /// hubiera terminado.
+  Future<void> _leave() async {
+    await _persistAll();
+    if (mounted) Navigator.of(context).pop();
   }
 
   /// El cronómetro sigue al ciclo de vida de la aplicación.
@@ -195,40 +245,22 @@ class _ReaderScreenState extends State<ReaderScreen>
     return CharLocator(start + ((end - start) * _lastFraction).round());
   }
 
-  void _persistPosition() {
-    final source = _source;
-    final services = _services;
-    if (source == null || services == null) return;
-
-    final locator = _currentLocator();
-    final updated = widget.book.copyWith(
-      locator: locator,
-      progress: source.progressAt(locator),
-      lastOpenedAt: widget.now(),
-    );
-    // Sin await: estamos en dispose y el guardado es de tipo «dispara y olvida».
-    // Un fallo aquí solo cuesta la posición de lectura, no el libro.
-    services.repository.save(updated);
-  }
-
-  void _persistSession() {
-    final services = _services;
-    if (services == null) return;
-
-    final session = _clock.toSession(
-      bookId: widget.book.id,
-      now: widget.now(),
-    );
-    // `null` cuando se abrió el libro y se salió enseguida: no ensucia el
-    // historial ni regala días de racha.
-    if (session == null) return;
-    services.sessions.add(session);
-  }
-
   @override
   Widget build(BuildContext context) {
     final surface = _style.surface;
 
+    return PopScope(
+      // Se bloquea el cierre automático para poder guardar antes de irnos.
+      // Cubre tanto el botón de la barra como el gesto de atrás de Android.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_leave());
+      },
+      child: _buildReader(surface),
+    );
+  }
+
+  Widget _buildReader(ReadingSurface surface) {
     return Scaffold(
       backgroundColor: surface.background,
       body: SafeArea(
@@ -267,7 +299,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                 surface: surface,
                 chunkIndex: _chunkIndex,
                 chunkCount: _chunkCount,
-                onBack: () => Navigator.of(context).pop(),
+                onBack: () => unawaited(_leave()),
                 onPrevious:
                     _chunkIndex > 0 ? () => _showChunk(_chunkIndex - 1) : null,
                 onNext: _chunkIndex < _chunkCount - 1
