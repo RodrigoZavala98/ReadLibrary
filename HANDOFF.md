@@ -1,6 +1,7 @@
 # Lector — traspaso de contexto
 
-Estado a **15 de septiembre de 2026**, commit `dfd3003`.
+Estado a **14 de septiembre de 2026**, commit «Mi Viaje: calendario,
+métricas e insignias».
 Repositorio: <https://github.com/RodrigoZavala98/ReadLibrary> (**público**).
 
 Aplicación Android de lectura de libros, escrita en Flutter, **completamente
@@ -111,31 +112,26 @@ para que un corte a mitad no deje la biblioteca truncada.
   dentro del fragmento donde estabas.
 - **Mi Refugio**: saludo personalizado, anillo de racha, aviso cuando está en
   riesgo, tarjeta de continuar leyendo.
+- **Mi Viaje**: calendario del mes con la intensidad de cada día, navegable
+  hacia atrás hasta la primera lectura; métricas del mes, resumen de todo el
+  historial y trece insignias con su progreso.
 - **Perfil local**: nombre opcional y meta diaria, detrás del avatar.
 - **Registro de lectura**: cronómetro que cuenta tiempo delante del libro, no
   tiempo con el libro abierto.
 
-**181 pruebas**, análisis estático limpio. Todo verificado en dispositivo real.
+**228 pruebas**, análisis estático limpio. Todo verificado en dispositivo real
+salvo Mi Viaje, que está pendiente del próximo APK.
 
 ---
 
 ## 4. Qué falta, en el orden que recomiendo
 
-### 4.1 Mi Viaje (el más barato)
-
-`domain/activity_calendar.dart` **ya está escrito y probado**: cuadrícula
-mensual, niveles de intensidad, métricas del mes. No hay pantalla que lo muestre.
-Es puro trabajo de interfaz sobre lógica ya verificada, igual que pasó con la
-racha.
-
-Falta también el modelo de insignias, que no existe todavía.
-
-### 4.2 Mis Notas
+### 4.1 Mis Notas
 
 `domain/highlight.dart` tiene el modelo. Falta **todo** lo demás: capturar la
 selección de texto en el lector, persistir, y la pantalla de la sección.
 
-### 4.3 EPUB
+### 4.2 EPUB
 
 El formato que de verdad importa. Hay una decisión de fondo pendiente:
 
@@ -149,7 +145,7 @@ renderizador de verdad: ese fichero entiende **solo** el `<p>` que genera
 `TxtBookSource`, y el HTML de un EPUB es arbitrario y viene con estilos, tablas e
 imágenes.
 
-### 4.4 PDF y CBZ
+### 4.3 PDF y CBZ
 
 - **PDF → `pdfrx` 2.6.1** (MIT, 449k descargas, mantenido). **No uses
   `syncfusion_flutter_pdfviewer`**: es comercial, y su licencia gratuita tiene
@@ -157,7 +153,7 @@ imágenes.
   casi seguro no cumple.
 - **CBZ → `archive`** (ya presente como dependencia transitiva).
 
-### 4.5 Lo pequeño que falta
+### 4.4 Lo pequeño que falta
 
 - Portadas reales (hoy hay una tarjeta con la inicial) → `palette_generator` para
   el color dominante.
@@ -170,6 +166,8 @@ imágenes.
   necesita precisión al minuto. Harán falta `POST_NOTIFICATIONS` (permiso en
   runtime desde Android 13) y `RECEIVE_BOOT_COMPLETED`.
 - Borrar un libro de la biblioteca.
+- Las insignias no guardan **cuándo** se consiguieron: se sabe que están, no el
+  día. Deducir la fecha exigiría recorrer el historial criterio a criterio.
 - Colecciones: el campo `collection` existe en el modelo, sin interfaz.
 
 ---
@@ -282,6 +280,10 @@ posición está desacoplada. Anota el avance mientras el widget vive.
 - **El APK de depuración pesa 74 MB.** Un *release* firmado bajaría a 15–20 MB, y
   dividiendo por arquitectura a menos de 10.
 - **No se extraen portadas** de los ficheros todavía.
+- **Las insignias se derivan del historial**, no se guardan al desbloquearse.
+  A cambio de no tener un fichero más que pueda desincronizarse, borrar de la
+  biblioteca un libro terminado puede volver a bloquear una insignia, y cambiar
+  un criterio reescribe el pasado.
 
 ---
 
@@ -292,8 +294,12 @@ posición está desacoplada. Anota el avance mientras el widget vive.
   alternativa evidente que se descartó, el comentario dice por qué.
 - **Cada corrección lleva su prueba de regresión, y la prueba se valida
   reintroduciendo el fallo.** Una prueba que nunca has visto fallar no demuestra
-  nada. Esta costumbre cazó un falso positivo: un test que fallaba por un motivo
-  distinto del que creía comprobar.
+  nada. Esta costumbre cazó un falso positivo —un test que fallaba por un motivo
+  distinto del que creía comprobar— y, en Mi Viaje, una prueba que seguía
+  pasando con el fallo dentro: comprobaba que cambiar de mes borraba el día
+  seleccionado, pero eso no se podía ver desde fuera porque la selección lleva
+  mes y año. Se borró el código muerto y la prueba pasó a comprobar lo que de
+  verdad importa, que la lectura de un mes no se atribuya a otro.
 - Ante un fallo que no se entiende a la primera: **instrumenta con trazas** en
   lugar de encadenar hipótesis. En el último fallo se descartaron tres teorías
   equivocadas antes de hacerlo, y la instrumentación lo resolvió en un intento.

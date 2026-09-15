@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../ui/library_screen.dart';
 import '../ui/refugio_screen.dart';
+import '../ui/viaje_screen.dart';
 
 /// Las cuatro secciones de la aplicación.
 ///
@@ -52,10 +53,7 @@ class _HomeShellState extends State<HomeShell> {
             title: 'Mis Notas',
             detail: 'Frases guardadas y subrayados de tus lecturas.',
           ),
-          HomeSection.viaje => const _Placeholder(
-            title: 'Mi Viaje',
-            detail: 'Logros, estadísticas y tiempo de lectura.',
-          ),
+          HomeSection.viaje => const ViajeScreen(),
         },
       ),
       bottomNavigationBar: _SectionBar(
