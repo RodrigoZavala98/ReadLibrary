@@ -22,10 +22,6 @@ void main() {
     if (temp.existsSync()) await temp.delete(recursive: true);
   });
 
-  /// Monta la app y abre Mi Refugio.
-  ///
-  /// `runAsync` es imprescindible porque el cuerpo de `testWidgets` corre con
-  /// reloj simulado y aquí hay lecturas reales de disco.
   /// Alterna fotogramas con tiempo real hasta que la carga de disco termina.
   ///
   /// Hace falta porque `pump` avanza el reloj simulado pero no deja correr el
@@ -74,10 +70,21 @@ void main() {
     bookId: 1,
   );
 
-  /// Hoy a las ocho de la tarde, para caer siempre dentro del día de lectura.
-  DateTime hoyPorLaTarde({int diasAtras = 0}) {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day - diasAtras, 20);
+  /// Un instante que pertenece con certeza al día de lectura indicado.
+  ///
+  /// No vale con poner «hoy a las ocho de la tarde». El día de lectura no
+  /// coincide con el natural: empieza a [dayStartHour]. Si la prueba se ejecuta
+  /// entre medianoche y esa hora, el día de lectura en curso es todavía el
+  /// natural anterior, y una sesión fechada hoy a las 20:00 caería en un día
+  /// *futuro* — la racha daría cero.
+  ///
+  /// Eso es justo lo que pasó en integración continua, que corre en UTC: los
+  /// mismos tests pasaban en local y fallaban en el servidor según la hora.
+  /// Aquí se parte del día de lectura vigente y se retrocede desde él, así que
+  /// el resultado no depende del momento de ejecución.
+  DateTime diaDeLectura({int diasAtras = 0, int dayStartHour = 4}) {
+    final hoy = ReadingDay.keyFor(DateTime.now(), dayStartHour: dayStartHour);
+    return DateTime(hoy.year, hoy.month, hoy.day - diasAtras, dayStartHour + 1);
   }
 
   testWidgets('sin nombre saluda de forma impersonal', (tester) async {
@@ -103,7 +110,7 @@ void main() {
   });
 
   testWidgets('leer hoy cumpliendo la meta muestra la racha', (tester) async {
-    await sembrar(tester, sessions: [sesion(hoyPorLaTarde())]);
+    await sembrar(tester, sessions: [sesion(diaDeLectura())]);
     await abrirRefugio(tester);
 
     expect(find.text('1'), findsOneWidget);
@@ -116,9 +123,9 @@ void main() {
     await sembrar(
       tester,
       sessions: [
-        sesion(hoyPorLaTarde(diasAtras: 2)),
-        sesion(hoyPorLaTarde(diasAtras: 1)),
-        sesion(hoyPorLaTarde()),
+        sesion(diaDeLectura(diasAtras: 2)),
+        sesion(diaDeLectura(diasAtras: 1)),
+        sesion(diaDeLectura()),
       ],
     );
     await abrirRefugio(tester);
@@ -134,8 +141,8 @@ void main() {
     await sembrar(
       tester,
       sessions: [
-        sesion(hoyPorLaTarde(diasAtras: 2)),
-        sesion(hoyPorLaTarde(diasAtras: 1)),
+        sesion(diaDeLectura(diasAtras: 2)),
+        sesion(diaDeLectura(diasAtras: 1)),
       ],
     );
     await abrirRefugio(tester);
@@ -146,7 +153,7 @@ void main() {
 
   testWidgets('una lectura corta no cumple la meta pero se nota en el anillo',
       (tester) async {
-    await sembrar(tester, sessions: [sesion(hoyPorLaTarde(), 5)]);
+    await sembrar(tester, sessions: [sesion(diaDeLectura(), 5)]);
     await abrirRefugio(tester);
 
     expect(find.text('0'), findsOneWidget, reason: '5 min no llegan a 15');
@@ -158,11 +165,32 @@ void main() {
     await sembrar(
       tester,
       profile: const ReaderProfile(dailyGoalMinutes: 5),
-      sessions: [sesion(hoyPorLaTarde(), 6)],
+      sessions: [sesion(diaDeLectura(), 6)],
     );
     await abrirRefugio(tester);
 
     expect(find.text('1'), findsOneWidget, reason: '6 min superan la meta de 5');
+  });
+
+  test('el helper siembra siempre dentro del día de lectura vigente', () {
+    // Esta es la invariante que se rompió en integracion continua. Se
+    // comprueba con varios cortes de dia porque el fallo solo aparecía cuando
+    // la hora de ejecución caía entre medianoche y el corte.
+    // El corte crítico depende de la hora: el fallo solo se manifiesta cuando
+    // «ahora» y el instante sembrado quedan a distinto lado del corte. Se
+    // incluye uno calculado para que la prueba muerda a cualquier hora.
+    final critico = (DateTime.now().hour + 1) % 24;
+    for (final corte in [0, 1, 4, 12, 22, critico]) {
+      final hoy = ReadingDay.keyFor(DateTime.now(), dayStartHour: corte);
+      expect(
+        ReadingDay.keyFor(
+          diaDeLectura(dayStartHour: corte),
+          dayStartHour: corte,
+        ),
+        hoy,
+        reason: 'con corte a las $corte la siembra debe caer en hoy',
+      );
+    }
   });
 
   group('continuar leyendo', () {

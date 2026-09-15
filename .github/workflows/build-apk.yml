@@ -43,6 +43,15 @@ jobs:
       - name: Pruebas
         run: flutter test
 
+      # El runner corre en UTC y el equipo de desarrollo no, así que una
+      # prueba que dependa de la hora pasa en un sitio y falla en el otro. Ya
+      # ocurrió dos veces. Repetir la suite bajo un huso extremo delata a
+      # cualquiera que vuelva a acoplarse al reloj de la máquina.
+      - name: Pruebas en otro huso horario
+        run: flutter test
+        env:
+          TZ: Pacific/Kiritimati
+
       # Se compila en modo depuración a propósito: un APK de release sin firmar
       # no se puede instalar en un teléfono. El de depuración va firmado con la
       # clave de desarrollo y se instala directamente.
