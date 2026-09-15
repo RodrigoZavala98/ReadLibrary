@@ -90,7 +90,7 @@ void main() {
     await source.open();
 
     final tercero = source.chapters[2];
-    expect(source.chunkIndexFor(tercero.start), 2);
+    expect(source.chapterIndexFor(tercero.start), 2);
     await source.dispose();
   });
 

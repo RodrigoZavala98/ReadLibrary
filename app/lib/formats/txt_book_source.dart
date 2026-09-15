@@ -112,12 +112,30 @@ class TxtBookSource implements ReflowableSource {
     return _toHtml(text.substring(chunk.start, chunk.end));
   }
 
-  /// Qué fragmento hay que cargar para mostrar una posición dada.
-  int chunkIndexFor(BookLocator locator) {
+  @override
+  int chapterIndexFor(BookLocator locator) {
     final chunks = _chunks;
     if (chunks == null) throw StateError('Llama a open() primero');
     final offset = locator is CharLocator ? locator.charOffset : 0;
     return TextChunker.chunkIndexAt(chunks, offset);
+  }
+
+  @override
+  double fractionWithin(int chapterIndex, BookLocator locator) {
+    if (locator is! CharLocator) return 0;
+    final (start, end) = chunkRange(chapterIndex);
+    if (end <= start) return 0;
+    return ((locator.charOffset - start) / (end - start)).clamp(0.0, 1.0);
+  }
+
+  /// El desplazamiento en caracteres se reparte de forma **lineal** sobre el
+  /// fragmento. No es exacto —los párrafos no miden todos lo mismo— pero deja
+  /// al lector en la misma pantalla, que es lo que importa. Hacerlo exacto
+  /// exigiría medir cada línea después de maquetarla.
+  @override
+  BookLocator locatorAt(int chapterIndex, double fraction) {
+    final (start, end) = chunkRange(chapterIndex);
+    return CharLocator(start + ((end - start) * fraction).round());
   }
 
   /// Convierte texto plano en HTML mínimo.
@@ -131,8 +149,16 @@ class TxtBookSource implements ReflowableSource {
         .map((p) => p.trim())
         .where((p) => p.isNotEmpty);
 
-    return paragraphs.map((p) => '<p>${_escape(p)}</p>').join();
+    // Los saltos de línea sueltos dentro de un párrafo se convierten en
+    // `<br/>`. Hacen falta desde que el renderizador es de verdad: colapsa los
+    // espacios, como manda HTML, y sin esto un poema de un `.txt` se leería
+    // como un párrafo corrido.
+    return paragraphs
+        .map((p) => '<p>${_escape(p).replaceAll(_lineBreak, '<br/>')}</p>')
+        .join();
   }
+
+  static final _lineBreak = RegExp(r'\r\n|\r|\n');
 
   /// Un `.txt` es texto plano, pero puede contener `<`, `>` o `&` como
   /// caracteres literales. Sin escapar, un diálogo como `<<¿vienes?>>` o una

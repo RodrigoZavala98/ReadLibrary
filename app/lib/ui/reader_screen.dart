@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -7,10 +8,13 @@ import '../app_services.dart';
 import '../core/theme/app_theme.dart';
 import '../domain/book_format.dart';
 import '../domain/book_locator.dart';
+import '../domain/book_source.dart';
 import '../domain/library_book.dart';
 import '../domain/reading_clock.dart';
+import '../formats/epub_book_source.dart';
 import '../formats/txt_book_source.dart';
-import 'simple_html.dart';
+import 'html_view.dart';
+import 'rich_html.dart';
 
 /// La pantalla de lectura.
 ///
@@ -35,10 +39,17 @@ class _ReaderScreenState extends State<ReaderScreen>
   final _scroll = ScrollController();
   final _clock = ReadingClock();
 
-  TxtBookSource? _source;
-  List<String> _paragraphs = const [];
-  int _chunkIndex = 0;
-  int _chunkCount = 1;
+  /// El lector habla con la interfaz, no con un formato.
+  ///
+  /// Antes era un `TxtBookSource`, y esta pantalla sabía de fragmentos y de
+  /// desplazamientos en caracteres, que son cosas del texto plano. Un EPUB no
+  /// tiene nada de eso: tiene documentos dentro de un ZIP.
+  ReflowableSource? _source;
+
+  List<HtmlBlock> _blocks = const [];
+  int _chapterIndex = 0;
+  int _chapterCount = 1;
+  String _chapterTitle = '';
   String? _error;
   bool _chromeVisible = false;
 
@@ -167,56 +178,57 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Future<void> _load() async {
-    if (widget.book.format != BookFormat.txt) {
+    final source = _sourceFor(widget.book);
+    if (source == null) {
       setState(() {
         _error =
             'Todavía no sé abrir ${widget.book.format.name.toUpperCase()}. '
-            'De momento solo texto plano.';
+            'De momento solo texto plano y EPUB.';
       });
       return;
     }
 
-    final source = TxtBookSource(File(widget.book.filePath));
     try {
       await source.open();
     } on Object catch (error) {
-      if (mounted) setState(() => _error = '$error');
+      if (mounted) setState(() => _error = _explain(error));
       return;
     }
 
     final saved = widget.book.locator ?? source.startLocator;
     _source = source;
-    _chunkCount = source.chapters.length;
+    _chapterCount = source.chapters.length;
 
-    final index = source.chunkIndexFor(saved);
-    await _showChunk(index, atFraction: _fractionWithin(source, index, saved));
+    // Abrir por el principio del capítulo dejaría al lector buscando por dónde
+    // iba: un capítulo son varias pantallas.
+    final index = source.chapterIndexFor(saved);
+    await _showChapter(index, atFraction: source.fractionWithin(index, saved));
   }
 
-  /// En qué punto del fragmento [index] cae una posición guardada.
-  ///
-  /// Sin esto, retomar un libro te dejaba siempre al principio del fragmento.
-  /// Con trozos de veinte mil caracteres eso son varias pantallas de distancia:
-  /// «continuar leyendo» te hacía buscar por dónde ibas.
-  static double _fractionWithin(
-    TxtBookSource source,
-    int index,
-    BookLocator locator,
-  ) {
-    if (locator is! CharLocator) return 0;
-    final (start, end) = source.chunkRange(index);
-    if (end <= start) return 0;
-    return ((locator.charOffset - start) / (end - start)).clamp(0.0, 1.0);
-  }
+  /// La única línea de esta pantalla que menciona un formato concreto.
+  static ReflowableSource? _sourceFor(LibraryBook book) =>
+      switch (book.format) {
+        BookFormat.txt => TxtBookSource(File(book.filePath)),
+        BookFormat.epub => EpubBookSource(File(book.filePath)),
+        _ => null,
+      };
 
-  Future<void> _showChunk(int index, {double atFraction = 0}) async {
+  /// Un [BookOpenException] ya trae una explicación escrita para el usuario
+  /// —«este EPUB está protegido con DRM»—; enseñar su `toString` le pondría
+  /// delante el nombre de una clase de Dart.
+  static String _explain(Object error) =>
+      error is BookOpenException ? error.message : '$error';
+
+  Future<void> _showChapter(int index, {double atFraction = 0}) async {
     final source = _source;
     if (source == null) return;
 
     final html = await source.loadChapter(index);
     if (!mounted) return;
     setState(() {
-      _chunkIndex = index;
-      _paragraphs = SimpleHtml.toParagraphs(html);
+      _chapterIndex = index;
+      _blocks = RichHtml.parse(html);
+      _chapterTitle = source.chapters[index].title;
       _lastFraction = atFraction;
     });
 
@@ -230,19 +242,23 @@ class _ReaderScreenState extends State<ReaderScreen>
     });
   }
 
-  /// Dónde está el lector ahora mismo, en caracteres desde el inicio del libro.
+  /// Dónde está el lector ahora mismo.
   ///
-  /// Es una estimación: se reparte el desplazamiento del scroll de forma lineal
-  /// sobre el rango de caracteres del fragmento. No es exacta —los párrafos no
-  /// miden todos lo mismo— pero devuelve al lector a la misma pantalla, que es
-  /// lo que importa. La posición exacta al carácter exigiría medir cada línea
-  /// tras maquetarla, y el coste no compensa.
-  CharLocator _currentLocator() {
+  /// Cada formato traduce «voy por la mitad del capítulo siete» a lo suyo: un
+  /// desplazamiento en caracteres en un TXT, el documento del lomo y las
+  /// milésimas recorridas en un EPUB. La pantalla ya no sabe cuál es cuál.
+  BookLocator _currentLocator() {
     final source = _source;
     if (source == null) return const CharLocator(0);
+    return source.locatorAt(_chapterIndex, _lastFraction);
+  }
 
-    final (start, end) = source.chunkRange(_chunkIndex);
-    return CharLocator(start + ((end - start) * _lastFraction).round());
+  /// Las imágenes salen del propio ZIP del EPUB y son relativas al capítulo que
+  /// las enseña. Un TXT no tiene ninguna.
+  Uint8List? _imageFor(String src) {
+    final source = _source;
+    if (source is! EpubBookSource) return null;
+    return source.imageBytes(_chapterIndex, src);
   }
 
   @override
@@ -282,14 +298,11 @@ class _ReaderScreenState extends State<ReaderScreen>
                     _style.margin,
                     96,
                   ),
-                  itemCount: _paragraphs.length,
-                  itemBuilder: (_, i) => Padding(
-                    padding: const EdgeInsets.only(bottom: 18),
-                    child: Text(
-                      _paragraphs[i],
-                      style: _style.toTextStyle(),
-                      textAlign: TextAlign.justify,
-                    ),
+                  itemCount: _blocks.length,
+                  itemBuilder: (_, i) => HtmlBlockView(
+                    block: _blocks[i],
+                    style: _style,
+                    imageFor: _imageFor,
                   ),
                 ),
               ),
@@ -297,13 +310,15 @@ class _ReaderScreenState extends State<ReaderScreen>
               _ReaderChrome(
                 title: widget.book.title,
                 surface: surface,
-                chunkIndex: _chunkIndex,
-                chunkCount: _chunkCount,
+                chapterTitle: _chapterTitle,
+                chapterIndex: _chapterIndex,
+                chapterCount: _chapterCount,
                 onBack: () => unawaited(_leave()),
-                onPrevious:
-                    _chunkIndex > 0 ? () => _showChunk(_chunkIndex - 1) : null,
-                onNext: _chunkIndex < _chunkCount - 1
-                    ? () => _showChunk(_chunkIndex + 1)
+                onPrevious: _chapterIndex > 0
+                    ? () => _showChapter(_chapterIndex - 1)
+                    : null,
+                onNext: _chapterIndex < _chapterCount - 1
+                    ? () => _showChapter(_chapterIndex + 1)
                     : null,
               ),
           ],
@@ -339,8 +354,9 @@ class _ReaderChrome extends StatelessWidget {
   const _ReaderChrome({
     required this.title,
     required this.surface,
-    required this.chunkIndex,
-    required this.chunkCount,
+    required this.chapterTitle,
+    required this.chapterIndex,
+    required this.chapterCount,
     required this.onBack,
     this.onPrevious,
     this.onNext,
@@ -348,8 +364,11 @@ class _ReaderChrome extends StatelessWidget {
 
   final String title;
   final ReadingSurface surface;
-  final int chunkIndex;
-  final int chunkCount;
+  /// «Parte 3» en un TXT; el título real del capítulo en un EPUB que lo traiga.
+  final String chapterTitle;
+
+  final int chapterIndex;
+  final int chapterCount;
   final VoidCallback onBack;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
@@ -395,18 +414,32 @@ class _ReaderChrome extends StatelessWidget {
                 icon: const Icon(Icons.chevron_left),
                 color: surface.text,
                 disabledColor: surface.muted.withValues(alpha: 0.4),
-                tooltip: 'Parte anterior',
+                tooltip: 'Capítulo anterior',
               ),
-              Text(
-                'Parte ${chunkIndex + 1} de $chunkCount',
-                style: TextStyle(color: surface.muted, fontSize: 13),
+              Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      chapterTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: surface.text, fontSize: 13),
+                    ),
+                    Text(
+                      '${chapterIndex + 1} de $chapterCount',
+                      style: TextStyle(color: surface.muted, fontSize: 11),
+                    ),
+                  ],
+                ),
               ),
               IconButton(
                 onPressed: onNext,
                 icon: const Icon(Icons.chevron_right),
                 color: surface.text,
                 disabledColor: surface.muted.withValues(alpha: 0.4),
-                tooltip: 'Parte siguiente',
+                tooltip: 'Capítulo siguiente',
               ),
             ],
           ),

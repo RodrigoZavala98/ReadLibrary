@@ -41,8 +41,8 @@ sealed class BookLocator {
       case 'char':
         final offset = _nonNegative(value);
         locator = offset == null ? null : CharLocator(offset);
-      case 'cfi':
-        locator = value.isEmpty ? null : CfiLocator(value);
+      case 'epub':
+        locator = _parseEpub(value);
       default:
         locator = null;
     }
@@ -57,8 +57,18 @@ sealed class BookLocator {
   bool suitsFormat(BookFormat format) => switch (this) {
     PageLocator() => format.layout == LayoutKind.fixed,
     CharLocator() => format == BookFormat.txt,
-    CfiLocator() => format == BookFormat.epub,
+    EpubLocator() => format == BookFormat.epub,
   };
+
+  /// «7/432»: documento del lomo y milésimas dentro de él.
+  static EpubLocator? _parseEpub(String value) {
+    final slash = value.indexOf('/');
+    if (slash == -1) return null;
+    final spine = _nonNegative(value.substring(0, slash));
+    final permille = _nonNegative(value.substring(slash + 1));
+    if (spine == null || permille == null || permille > 1000) return null;
+    return EpubLocator(spine, permille);
+  }
 
   static int? _nonNegative(String value) {
     final parsed = int.tryParse(value);
@@ -111,27 +121,47 @@ final class CharLocator extends BookLocator {
   String toString() => 'CharLocator($charOffset)';
 }
 
-/// Posición en EPUB, expresada como EPUB CFI.
+/// Posición en un EPUB: documento del lomo y milésimas recorridas dentro de él.
 ///
-/// Un CFI es la forma estándar de señalar un punto concreto dentro de un EPUB
-/// —capítulo, nodo y desplazamiento—, del estilo
-/// `epubcfi(/6/14[chap05ref]!/4[body01]/10/2/1:0)`. Sobrevive a cualquier
-/// cambio de tipografía o tamaño de pantalla, que es exactamente el motivo de
-/// usarlo en lugar de un número de página.
-final class CfiLocator extends BookLocator {
-  const CfiLocator(this.cfi) : assert(cfi != '');
+/// No es un EPUB CFI, que sería el estándar. Un CFI señala un nodo concreto del
+/// árbol del documento, y generarlo o resolverlo exige tener ese árbol delante:
+/// funciona cuando el que pinta el libro es Epub.js, que fue el motor que se
+/// descartó. Con un renderizador propio, un CFI sería una cadena que nadie
+/// sabría interpretar.
+///
+/// A cambio se guarda el documento del lomo —que es estable, es un fichero
+/// dentro del ZIP— y la fracción recorrida dentro de él en milésimas. Sobrevive
+/// a cualquier cambio de tipografía, que es el motivo de todo esto. Lo que no
+/// da es el carácter exacto: devuelve a la misma pantalla, no a la misma
+/// palabra. El tramo sobre el que se aproxima es un capítulo, del mismo orden
+/// que el fragmento sobre el que ya aproxima el lector de TXT.
+final class EpubLocator extends BookLocator {
+  const EpubLocator(this.spineIndex, this.permille)
+    : assert(spineIndex >= 0),
+      assert(permille >= 0 && permille <= 1000);
 
-  final String cfi;
+  /// Milésimas y no un `double` porque esto se guarda en JSON y se compara:
+  /// un entero va y vuelve idéntico, y 0,1 + 0,2 no.
+  factory EpubLocator.atFraction(int spineIndex, double fraction) =>
+      EpubLocator(spineIndex, (fraction.clamp(0.0, 1.0) * 1000).round());
+
+  final int spineIndex;
+  final int permille;
+
+  double get fraction => permille / 1000;
 
   @override
-  String encode() => 'cfi:$cfi';
+  String encode() => 'epub:$spineIndex/$permille';
 
   @override
-  bool operator ==(Object other) => other is CfiLocator && other.cfi == cfi;
+  bool operator ==(Object other) =>
+      other is EpubLocator &&
+      other.spineIndex == spineIndex &&
+      other.permille == permille;
 
   @override
-  int get hashCode => Object.hash('cfi', cfi);
+  int get hashCode => Object.hash('epub', spineIndex, permille);
 
   @override
-  String toString() => 'CfiLocator($cfi)';
+  String toString() => 'EpubLocator($spineIndex, $permille‰)';
 }

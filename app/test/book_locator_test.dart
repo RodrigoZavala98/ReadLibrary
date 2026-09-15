@@ -16,13 +16,18 @@ void main() {
       expect(restored, original);
     });
 
-    test('un CFI de EPUB sobrevive intacto, con sus dos puntos incluidos', () {
-      // Un CFI real lleva ':' dentro, que es justo el carácter que usamos como
-      // separador. Si decode partiera por el último ':' en vez de por el
-      // primero, esto se rompería.
-      const original = CfiLocator('epubcfi(/6/14[chap05]!/4/10/2/1:0)');
+    test('una posición de EPUB sobrevive al guardado', () {
+      const original = EpubLocator(14, 432);
       final restored = BookLocator.decode(original.encode(), BookFormat.epub);
       expect(restored, original);
+    });
+
+    test('la fracción se guarda en milésimas y vuelve idéntica', () {
+      // Milésimas y no un double: un entero va y vuelve exacto por JSON, y
+      // comparar 0,432 reconstruido con 0,432 escrito no es de fiar.
+      final original = EpubLocator.atFraction(3, 0.4325);
+      expect(original.permille, 433);
+      expect(BookLocator.decode(original.encode(), BookFormat.epub), original);
     });
   });
 
@@ -31,8 +36,25 @@ void main() {
       expect(BookLocator.decode('page:12', BookFormat.epub), isNull);
     });
 
-    test('un CFI no vale para un PDF', () {
-      expect(BookLocator.decode('cfi:epubcfi(/6/4)', BookFormat.pdf), isNull);
+    test('una posición de EPUB no vale para un PDF', () {
+      expect(BookLocator.decode('epub:2/500', BookFormat.pdf), isNull);
+    });
+
+    test('un CFI guardado por una versión anterior se descarta', () {
+      // El EPUB se leía con CFI cuando el motor iba a ser Epub.js. Se cambió de
+      // motor, y un CFI ya no lo sabe interpretar nadie: el libro se abre por
+      // el principio en lugar de en un sitio inventado.
+      expect(
+        BookLocator.decode('cfi:epubcfi(/6/14!/4/10/2/1:0)', BookFormat.epub),
+        isNull,
+      );
+    });
+
+    test('una posición de EPUB imposible se descarta', () {
+      expect(BookLocator.decode('epub:2/1001', BookFormat.epub), isNull);
+      expect(BookLocator.decode('epub:2', BookFormat.epub), isNull);
+      expect(BookLocator.decode('epub:x/5', BookFormat.epub), isNull);
+      expect(BookLocator.decode('epub:-1/5', BookFormat.epub), isNull);
     });
 
     test('un desplazamiento de caracteres no vale para un cómic', () {

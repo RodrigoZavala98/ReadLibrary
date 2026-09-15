@@ -104,6 +104,26 @@ abstract interface class ReflowableSource implements BookSource {
   /// negritas, encabezados e imágenes intercaladas. El saneado es obligatorio:
   /// un EPUB es un fichero descargado de Internet y puede traer scripts.
   Future<String> loadChapter(int chapterIndex);
+
+  /// Qué capítulo hay que cargar para enseñar [locator].
+  ///
+  /// Estos tres métodos son los que permiten que la pantalla de lectura no
+  /// sepa de qué formato está leyendo. Antes vivían dentro del lector, escritos
+  /// contra los fragmentos de un TXT, y eran justo lo que lo ataba a ese
+  /// formato: un EPUB no tiene desplazamientos en caracteres sobre un texto
+  /// completo, porque no hay un texto completo en ninguna parte.
+  ///
+  /// Un localizador de otro formato, o fuera de rango, no es un error: se
+  /// resuelve al principio del libro. Perder la posición es molesto; no poder
+  /// abrir el libro lo es mucho más.
+  int chapterIndexFor(BookLocator locator);
+
+  /// En qué punto del capítulo [chapterIndex] cae [locator], de 0 a 1.
+  double fractionWithin(int chapterIndex, BookLocator locator);
+
+  /// El localizador que corresponde a estar en [fraction] del capítulo
+  /// [chapterIndex]. Es la operación inversa de [fractionWithin].
+  BookLocator locatorAt(int chapterIndex, double fraction);
 }
 
 /// El fichero no se pudo abrir.

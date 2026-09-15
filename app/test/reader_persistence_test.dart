@@ -9,6 +9,8 @@ import 'package:lector/domain/book_locator.dart';
 import 'package:lector/domain/library_book.dart';
 import 'package:lector/ui/reader_screen.dart';
 
+import 'epub_fixture.dart';
+
 /// Regresión de un fallo real: al salir del lector no se guardaba nada.
 ///
 /// La causa era que `dispose()` llamaba a `AppScope.of(context)`, y Flutter
@@ -308,6 +310,111 @@ void main() {
         closeTo(10000, 1500),
         reason: 'antes aterrizaba en 0 y había que buscar por dónde ibas',
       );
+    });
+  });
+  /// El mismo circuito, con el formato que de verdad importa.
+  ///
+  /// Un EPUB no tiene desplazamientos en caracteres ni fragmentos: tiene
+  /// documentos dentro de un ZIP. Que estas pruebas pasen sin tocar la pantalla
+  /// de lectura es lo que demuestra que ya no sabe de formatos.
+  group('EPUB', () {
+    Future<LibraryBook> prepararEpub(
+      WidgetTester tester, {
+      Map<String, Object>? entries,
+      BookLocator? locator,
+    }) async {
+      final file = File('${temp.path}${Platform.pathSeparator}libro.epub');
+      final book = LibraryBook(
+        id: 1,
+        filePath: file.path,
+        format: BookFormat.epub,
+        title: 'El libro',
+        addedAt: DateTime(2026, 3, 1),
+        locator: locator,
+      );
+
+      await tester.runAsync(() async {
+        await file.writeAsBytes(zipOf(entries ?? sampleEpub2()));
+        await services.repository.save(book);
+      });
+      return book;
+    }
+
+    testWidgets('se abre y enseña el texto del primer capítulo',
+        (tester) async {
+      await abrirLector(tester, await prepararEpub(tester));
+      expect(find.textContaining('Primera página'), findsOneWidget);
+    });
+
+    testWidgets('los controles enseñan el título real del capítulo',
+        (tester) async {
+      await abrirLector(tester, await prepararEpub(tester));
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(ReaderScreen),
+          matching: find.byType(ListView),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('El principio'), findsOneWidget);
+      expect(find.text('1 de 2'), findsOneWidget);
+    });
+
+    testWidgets('pasar de capítulo y salir guarda dónde se estaba',
+        (tester) async {
+      await abrirLector(tester, await prepararEpub(tester));
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(ReaderScreen),
+          matching: find.byType(ListView),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.byTooltip('Capítulo siguiente'));
+      await asentar(tester);
+      expect(find.textContaining('Última página'), findsOneWidget);
+
+      ahora = ahora.add(const Duration(minutes: 9));
+      await cerrarLector(tester);
+
+      final guardado = await tester.runAsync(() => services.repository.byId(1));
+      expect(guardado!.locator, isA<EpubLocator>());
+      expect((guardado.locator! as EpubLocator).spineIndex, 1);
+      expect(guardado.progress, greaterThan(0));
+    });
+
+    testWidgets('retomar el libro vuelve al capítulo donde se dejó',
+        (tester) async {
+      await abrirLector(
+        tester,
+        await prepararEpub(tester, locator: const EpubLocator(1, 0)),
+      );
+
+      expect(find.textContaining('Última página'), findsOneWidget);
+      expect(find.textContaining('Primera página'), findsNothing);
+    });
+
+    testWidgets('un EPUB con DRM lo explica en lugar de fallar en silencio',
+        (tester) async {
+      final drm = {
+        ...sampleEpub2(),
+        'META-INF/encryption.xml':
+            '<?xml version="1.0"?>'
+            '<encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<EncryptedData xmlns="http://www.w3.org/2001/04/xmlenc#">'
+            '<CipherData><CipherReference URI="OEBPS/c1.xhtml"/></CipherData>'
+            '</EncryptedData></encryption>',
+      };
+      await abrirLector(tester, await prepararEpub(tester, entries: drm));
+
+      // El mensaje es el del dominio, sin el nombre de la clase de Dart
+      // delante, que es lo que saldría al enseñar el `toString` de la
+      // excepción.
+      expect(find.textContaining('DRM'), findsOneWidget);
+      expect(find.textContaining('BookOpenException'), findsNothing);
     });
   });
 }

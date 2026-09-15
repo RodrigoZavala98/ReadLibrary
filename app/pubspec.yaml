@@ -37,6 +37,14 @@ dependencies:
   file_picker: ^13.0.0
   path_provider: ^2.1.6
 
+  # EPUB, en Dart puro. Un EPUB es un ZIP con un OPF dentro y XHTML en los
+  # capítulos, así que hacen falta exactamente estas tres piezas y ninguna
+  # dependencia nativa: todo el formato se puede probar sin dispositivo, que en
+  # este equipo es la única verificación posible.
+  archive: ^4.3.0
+  html: ^0.15.7
+  xml: ^7.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

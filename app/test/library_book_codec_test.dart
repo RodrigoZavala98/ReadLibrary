@@ -32,7 +32,7 @@ void main() {
         author: 'Frank Herbert',
         coverPath: '/datos/portadas/7.jpg',
         lastOpenedAt: DateTime(2026, 3, 14, 22, 30),
-        locator: const CfiLocator('epubcfi(/6/14!/4/10/2/1:0)'),
+        locator: const EpubLocator(14, 650),
         progress: 0.65,
         totalPages: 312,
         collection: 'Ciencia ficción',

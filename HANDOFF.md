@@ -1,7 +1,7 @@
 # Lector — traspaso de contexto
 
-Estado a **14 de septiembre de 2026**, commit «Mi Viaje: calendario,
-métricas e insignias».
+Estado a **14 de septiembre de 2026**, commit «EPUB: analizador propio,
+renderizador de XHTML y lector generalizado».
 Repositorio: <https://github.com/RodrigoZavala98/ReadLibrary> (**público**).
 
 Aplicación Android de lectura de libros, escrita en Flutter, **completamente
@@ -83,7 +83,7 @@ dispositivo, que en este equipo es la única forma de verificar nada.
 No es un número de página, y esa es la decisión más importante del proyecto. En
 un EPUB el texto se re-maqueta: subir el tamaño de letra cambia la numeración y
 el lector pierde su sitio. Cada formato guarda su propio localizador
-(`PageLocator` para PDF y CBZ, `CharLocator` para TXT, `CfiLocator` para EPUB) y
+(`PageLocator` para PDF y CBZ, `CharLocator` para TXT, `EpubLocator` para EPUB) y
 el porcentaje de avance va **aparte**, solo para pintar barras. Un localizador
 que no corresponde al formato se descarta al leerlo.
 
@@ -108,6 +108,9 @@ para que un corte a mitad no deje la biblioteca truncada.
 - **Mi Biblioteca**: lista con progreso, estado vacío, botón de alta.
 - **Leer un TXT**: detección de codificación, troceado, superficie de papel,
   controles ocultos hasta tocar el centro, navegación por partes.
+- **Leer un EPUB**: analizador propio en Dart puro (ZIP, OPF, índice por NCX o
+  por `nav`), renderizador de XHTML con la tipografía del lector, imágenes de
+  los capítulos, y los EPUB con DRM rechazados con una explicación.
 - **La posición sobrevive** a cerrar la aplicación, y retomar un libro te deja
   dentro del fragmento donde estabas.
 - **Mi Refugio**: saludo personalizado, anillo de racha, aviso cuando está en
@@ -119,7 +122,8 @@ para que un corte a mitad no deje la biblioteca truncada.
 - **Registro de lectura**: cronómetro que cuenta tiempo delante del libro, no
   tiempo con el libro abierto.
 
-**228 pruebas**, análisis estático limpio. Todo verificado en dispositivo real.
+**309 pruebas**, análisis estático limpio. Todo verificado en dispositivo real
+salvo EPUB, pendiente del próximo APK.
 
 ---
 
@@ -130,29 +134,17 @@ para que un corte a mitad no deje la biblioteca truncada.
 `domain/highlight.dart` tiene el modelo. Falta **todo** lo demás: capturar la
 selección de texto en el lector, persistir, y la pantalla de la sección.
 
-### 4.2 EPUB
-
-El formato que de verdad importa. Hay una decisión de fondo pendiente:
-
-- **`flutter_epub_viewer` 2.0.0** (activo, WebView + Epub.js). Rápido de integrar,
-  pero **pierdes el control visual**: el degradado desde la portada no entra en un
-  WebView, y `page_flip` no puede doblar una página que renderiza otro motor.
-- **`epub_pro`** y pintarlo con widgets propios. Control total, mucho más trabajo.
-
-El mockup pide la segunda. Además habrá que sustituir `ui/simple_html.dart` por un
-renderizador de verdad: ese fichero entiende **solo** el `<p>` que genera
-`TxtBookSource`, y el HTML de un EPUB es arbitrario y viene con estilos, tablas e
-imágenes.
-
-### 4.3 PDF y CBZ
+### 4.2 PDF y CBZ
 
 - **PDF → `pdfrx` 2.6.1** (MIT, 449k descargas, mantenido). **No uses
   `syncfusion_flutter_pdfviewer`**: es comercial, y su licencia gratuita tiene
   topes de facturación y de número de desarrolladores que una empresa como esta
   casi seguro no cumple.
-- **CBZ → `archive`** (ya presente como dependencia transitiva).
+- **CBZ → `archive`**, que ya es dependencia directa desde EPUB. Ojo: hasta
+  ahora este documento decía que venía como dependencia transitiva, y era
+  falso; no estaba en `pubspec.lock`.
 
-### 4.4 Lo pequeño que falta
+### 4.3 Lo pequeño que falta
 
 - Portadas reales (hoy hay una tarjeta con la inicial) → `palette_generator` para
   el color dominante.
@@ -168,6 +160,11 @@ imágenes.
 - Las insignias no guardan **cuándo** se consiguieron: se sabe que están, no el
   día. Deducir la fecha exigiría recorrer el historial criterio a criterio.
 - Colecciones: el campo `collection` existe en el modelo, sin interfaz.
+- Del EPUB quedan fuera, a sabiendas: el **CSS** del libro (manda la tipografía
+  del lector, que es la decisión de fondo), las **tablas** —se aplanan a una
+  línea por fila— y los **enlaces internos**, que se pintan pero no navegan.
+- Los **`<title>` de los documentos** no se leen para titular capítulos sin
+  índice: obligaría a descomprimir el libro entero al abrirlo. Se numeran.
 
 ---
 
@@ -216,7 +213,18 @@ pueda mostrarlos en gris y **explicar** en vez de fallar.
     código y binarios nativos, imposibles de verificar en este equipo. Para
     cientos de libros el JSON sobra. Si algún día hace falta: `isar_community`
     3.3.2 (el `isar` original lleva tres años sin versión estable).
-11. **`applicationId` = `com.readlibrary.lector`.** Era `com.uif37020.lector` —
+11. **EPUB con analizador propio**, no con `flutter_epub_viewer`. El mockup ya
+    pedía control visual, pero el argumento que cerró la decisión es otro: en
+    este equipo no se puede compilar un APK, así que las pruebas son la única
+    verificación posible antes de subir, y de un lector sobre WebView no se
+    puede probar ni una línea. De paso, el `<script>` de un EPUB descargado de
+    cualquier sitio no se ejecuta nunca, porque no hay motor que lo ejecute.
+    Se descartó también `epub_pro`: pide `xml ^6.5.0` contra el 7.0.1 que ya
+    arrastra el proyecto y lleva más de un año sin publicarse.
+12. **La posición en un EPUB es documento del lomo + milésimas**, no un CFI. Un
+    CFI se genera contra el DOM de Epub.js; sin ese motor no lo sabría
+    interpretar nadie.
+13. **`applicationId` = `com.readlibrary.lector`.** Era `com.uif37020.lector` —
     el número de empleado — y es **permanente** una vez publicas en Play. No lo
     cambies otra vez.
 
@@ -279,6 +287,13 @@ posición está desacoplada. Anota el avance mientras el widget vive.
 - **El APK de depuración pesa 74 MB.** Un *release* firmado bajaría a 15–20 MB, y
   dividiendo por arquitectura a menos de 10.
 - **No se extraen portadas** de los ficheros todavía.
+- **Dentro de un capítulo de EPUB la posición es una fracción**, no un punto del
+  texto: devuelve a la misma pantalla, no a la misma palabra. El tramo sobre el
+  que aproxima es un capítulo, del mismo orden que el fragmento sobre el que ya
+  aproxima el lector de TXT.
+- **El progreso de un EPUB se reparte por el peso en bytes** de cada documento
+  del lomo, no por su número de palabras. Un capítulo con mucho marcado o muchas
+  imágenes pesa más de lo que se tarda en leerlo.
 - **Las insignias se derivan del historial**, no se guardan al desbloquearse.
   A cambio de no tener un fichero más que pueda desincronizarse, borrar de la
   biblioteca un libro terminado puede volver a bloquear una insignia, y cambiar
