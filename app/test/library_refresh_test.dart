@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lector/app_services.dart';
 import 'package:lector/domain/book_format.dart';
 import 'package:lector/domain/library_book.dart';
+import 'package:lector/domain/reading_settings.dart';
 import 'package:lector/main.dart';
 import 'package:lector/shell/home_shell.dart';
 import 'package:lector/ui/reader_screen.dart';
@@ -39,6 +40,15 @@ void main() {
     }
     await tester.pump();
   }
+
+  /// Esta prueba avanza la lectura desplazando el texto, así que se pone el
+  /// lector en modo continuo. Lo que comprueba —que la biblioteca refresque el
+  /// avance al volver— no depende del modo; lo que necesita es una forma de
+  /// avanzar, y arrastrar es la más directa. El modo paginado tiene sus propias
+  /// pruebas en `reader_pagination_test.dart`.
+  setUp(() => services.settings.save(
+        ReadingSettings(mode: ReadingMode.continuo),
+      ));
 
   /// La biblioteca queda montada detrás del lector, así que hay dos listas en
   /// el árbol. Hay que apuntar a la del lector explícitamente.

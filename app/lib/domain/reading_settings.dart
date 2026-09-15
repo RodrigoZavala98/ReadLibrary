@@ -48,6 +48,38 @@ enum ReadingFont {
   final String label;
 }
 
+/// Cómo se recorre el libro.
+enum ReadingMode {
+  /// Páginas medidas, que se pasan deslizando el dedo.
+  paginado(label: 'Páginas'),
+
+  /// Desplazamiento vertical continuo, como una página web.
+  ///
+  /// Se conserva porque hay quien lo prefiere para documentación técnica, donde
+  /// se salta mucho arriba y abajo, y porque deja una salida si algún libro se
+  /// paginara mal.
+  continuo(label: 'Desplazamiento');
+
+  const ReadingMode({required this.label});
+
+  final String label;
+}
+
+/// Cómo se pasa de una página a la siguiente.
+enum PageAnimation {
+  deslizar(label: 'Deslizar'),
+  desvanecer(label: 'Desvanecer'),
+  ninguna(label: 'Ninguna'),
+
+  /// Dobla la esquina como una hoja de papel. La única que necesita un paquete
+  /// de terceros, y por eso está aislada en `ui/paged_reader.dart`.
+  doblar(label: 'Doblar hoja');
+
+  const PageAnimation({required this.label});
+
+  final String label;
+}
+
 class ReadingSettings {
   /// Los rangos se recortan **aquí**, no en la interfaz.
   ///
@@ -59,6 +91,8 @@ class ReadingSettings {
   ReadingSettings({
     this.theme = ReadingTheme.claro,
     this.font = ReadingFont.literata,
+    this.mode = ReadingMode.paginado,
+    this.animation = PageAnimation.deslizar,
     double fontSize = 19,
     double lineHeight = 1.6,
     double margin = 24,
@@ -81,6 +115,11 @@ class ReadingSettings {
   /// texto largo se lee mejor con serifa que con la sans del sistema.
   final ReadingFont font;
 
+  /// Por defecto paginado: es lo que se espera de un lector de libros.
+  final ReadingMode mode;
+
+  final PageAnimation animation;
+
   final double fontSize;
 
   /// Múltiplo del tamaño de fuente, no píxeles absolutos.
@@ -101,6 +140,8 @@ class ReadingSettings {
   ReadingSettings copyWith({
     ReadingTheme? theme,
     ReadingFont? font,
+    ReadingMode? mode,
+    PageAnimation? animation,
     double? fontSize,
     double? lineHeight,
     double? margin,
@@ -110,6 +151,8 @@ class ReadingSettings {
     return ReadingSettings(
       theme: theme ?? this.theme,
       font: font ?? this.font,
+      mode: mode ?? this.mode,
+      animation: animation ?? this.animation,
       fontSize: fontSize ?? this.fontSize,
       lineHeight: lineHeight ?? this.lineHeight,
       margin: margin ?? this.margin,
@@ -124,14 +167,24 @@ class ReadingSettings {
       other is ReadingSettings &&
       other.theme == theme &&
       other.font == font &&
+      other.mode == mode &&
+      other.animation == animation &&
       other.fontSize == fontSize &&
       other.lineHeight == lineHeight &&
       other.margin == margin &&
       other.brightness == brightness;
 
   @override
-  int get hashCode =>
-      Object.hash(theme, font, fontSize, lineHeight, margin, brightness);
+  int get hashCode => Object.hash(
+    theme,
+    font,
+    mode,
+    animation,
+    fontSize,
+    lineHeight,
+    margin,
+    brightness,
+  );
 
   static double _clamp(double value, double min, double max) {
     if (value.isNaN) return min;

@@ -95,18 +95,27 @@ void main() {
 
   /// Los controles están escondidos hasta que se toca el centro.
   Future<void> sacarControles(WidgetTester tester) async {
-    await tester.tap(
-      find.descendant(
-        of: find.byType(ReaderScreen),
-        matching: find.byType(ListView),
-      ),
-    );
+    // Por coordenadas y no por widget: el interior del lector cambia según el
+    // modo, pero el gesto del usuario —tocar el centro— es siempre el mismo.
+    await tester.tapAt(tester.getCenter(find.byType(ReaderScreen)));
     await tester.pump();
   }
 
   Future<void> abrirAjustes(WidgetTester tester) async {
     await sacarControles(tester);
     await tester.tap(find.byTooltip('Ajustes de lectura'));
+    await asentar(tester);
+  }
+
+  /// Toca algo de la hoja de ajustes, subiéndolo antes a la vista.
+  ///
+  /// La hoja tiene más filas de las que caben en el lienzo de pruebas, así que
+  /// sin esto el toque cae fuera de la pantalla y no pasa nada. En un móvil de
+  /// verdad ocurre lo mismo: por eso la hoja lleva su propio desplazamiento.
+  Future<void> tocarEnLaHoja(WidgetTester tester, Finder objetivo) async {
+    await tester.ensureVisible(objetivo);
+    await tester.pump();
+    await tester.tap(objetivo);
     await asentar(tester);
   }
 
@@ -144,8 +153,7 @@ void main() {
       final antes = fondoDelLector(tester);
       await abrirAjustes(tester);
 
-      await tester.tap(find.text('Oscuro'));
-      await asentar(tester);
+      await tocarEnLaHoja(tester, find.text('Oscuro'));
 
       expect(fondoDelLector(tester), isNot(antes));
       expect(
@@ -158,8 +166,7 @@ void main() {
       await abrirLector(tester, await prepararTxt(tester));
       await abrirAjustes(tester);
 
-      await tester.tap(find.text('Open Sans'));
-      await asentar(tester);
+      await tocarEnLaHoja(tester, find.text('Open Sans'));
 
       expect(estiloAplicado(tester).fontFamily, 'Open Sans');
     });
@@ -169,8 +176,7 @@ void main() {
       final antes = estiloAplicado(tester).fontSize;
       await abrirAjustes(tester);
 
-      await tester.tap(find.byTooltip('Tamaño: más'));
-      await asentar(tester);
+      await tocarEnLaHoja(tester, find.byTooltip('Tamaño: más'));
 
       expect(estiloAplicado(tester).fontSize, antes + 1);
     });
@@ -181,10 +187,8 @@ void main() {
       await abrirLector(tester, book);
       await abrirAjustes(tester);
 
-      await tester.tap(find.byTooltip('Interlineado: más'));
-      await asentar(tester);
-      await tester.tap(find.text('Sepia'));
-      await asentar(tester);
+      await tocarEnLaHoja(tester, find.byTooltip('Interlineado: más'));
+      await tocarEnLaHoja(tester, find.text('Sepia'));
 
       // Se guarda en cada toque, no al cerrar la hoja.
       final guardados = await tester.runAsync(services.settings.load);
@@ -208,8 +212,7 @@ void main() {
 
       expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
 
-      await tester.tap(find.byType(Switch));
-      await asentar(tester);
+      await tocarEnLaHoja(tester, find.byType(Switch));
 
       final guardados = await tester.runAsync(services.settings.load);
       expect(guardados!.usesSystemBrightness, isFalse);

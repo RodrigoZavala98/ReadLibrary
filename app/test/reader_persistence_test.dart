@@ -7,6 +7,7 @@ import 'package:lector/core/theme/app_theme.dart';
 import 'package:lector/domain/book_format.dart';
 import 'package:lector/domain/book_locator.dart';
 import 'package:lector/domain/library_book.dart';
+import 'package:lector/domain/reading_settings.dart';
 import 'package:lector/ui/reader_screen.dart';
 
 import 'epub_fixture.dart';
@@ -91,6 +92,16 @@ void main() {
     await asentar(tester);
   }
 
+  /// Saca u oculta los controles tocando el centro de la pantalla.
+  ///
+  /// Se toca el centro por coordenadas y no un widget concreto porque el
+  /// interior del lector depende del modo: en paginado hay páginas y en
+  /// continuo un `ListView`. El gesto del usuario es el mismo en los dos.
+  Future<void> tocarCentro(WidgetTester tester) async {
+    await tester.tapAt(tester.getCenter(find.byType(ReaderScreen)));
+    await tester.pump();
+  }
+
   /// Cierra el lector sustituyendo el árbol, que provoca su dispose().
   Future<void> cerrarLector(WidgetTester tester) async {
     await tester.runAsync(
@@ -137,13 +148,7 @@ void main() {
     // Salida por el botón de la barra, que dispara la salida ordenada y, tras
     // ella, el desmontaje de la ruta. Los controles están ocultos hasta tocar
     // el centro de la pantalla.
-    await tester.tap(
-      find.descendant(
-        of: find.byType(ReaderScreen),
-        matching: find.byType(ListView),
-      ),
-    );
-    await tester.pump();
+    await tocarCentro(tester);
 
     // El toque va dentro de `runAsync` a propósito. La salida encadena varias
     // escrituras en disco, y cada una necesita una ventana de tiempo real para
@@ -236,6 +241,13 @@ void main() {
   /// pero para entonces el ListView ya está desmontado y su posición
   /// desacoplada, así que siempre devolvía el inicio del fragmento.
   group('progreso de lectura', () {
+    // Este grupo mide el avance por lo que se ha desplazado el texto, así que
+    // va en modo continuo. En paginado el avance sale de la página, y eso se
+    // prueba en `reader_pagination_test.dart`.
+    setUp(() => services.settings.save(
+          ReadingSettings(mode: ReadingMode.continuo),
+        ));
+
     Future<double> progresoTras(WidgetTester tester) async {
       final guardado = await tester.runAsync(() => services.repository.byId(1));
       return guardado!.progress;
@@ -350,13 +362,7 @@ void main() {
         (tester) async {
       await abrirLector(tester, await prepararEpub(tester));
 
-      await tester.tap(
-        find.descendant(
-          of: find.byType(ReaderScreen),
-          matching: find.byType(ListView),
-        ),
-      );
-      await tester.pump();
+      await tocarCentro(tester);
 
       expect(find.text('El principio'), findsOneWidget);
       expect(find.textContaining('Capítulo 1 de 2'), findsOneWidget);
@@ -366,13 +372,7 @@ void main() {
         (tester) async {
       await abrirLector(tester, await prepararEpub(tester));
 
-      await tester.tap(
-        find.descendant(
-          of: find.byType(ReaderScreen),
-          matching: find.byType(ListView),
-        ),
-      );
-      await tester.pump();
+      await tocarCentro(tester);
       await tester.tap(find.byTooltip('Capítulo siguiente'));
       await asentar(tester);
       expect(find.textContaining('Última página'), findsOneWidget);

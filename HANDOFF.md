@@ -1,7 +1,7 @@
 # Lector — traspaso de contexto
 
-Estado a **14 de septiembre de 2026**, commit «Ajustes de lectura, índice y
-avance visible».
+Estado a **14 de septiembre de 2026**, commit «Paginación real y animaciones de
+paso de página».
 Repositorio: <https://github.com/RodrigoZavala98/ReadLibrary> (**público**).
 
 Aplicación Android de lectura de libros, escrita en Flutter, **completamente
@@ -115,6 +115,9 @@ para que un corte a mitad no deje la biblioteca truncada.
   dentro del fragmento donde estabas.
 - **Ajustes de lectura**: cuatro temas, cinco tipografías —dos incrustadas—,
   tamaño, interlineado, margen y brillo, aplicados en vivo y guardados solos.
+- **Páginas de verdad**: el texto se mide y se reparte en páginas cortadas por
+  línea, que se pasan deslizando o tocando el borde, con cuatro animaciones a
+  elegir. El desplazamiento continuo sigue disponible como ajuste.
 - **Índice y avance**: el índice de capítulos desde dentro del libro, y el
   porcentaje leído siempre a la vista en el margen.
 - **Mi Refugio**: saludo personalizado, anillo de racha, aviso cuando está en
@@ -126,8 +129,8 @@ para que un corte a mitad no deje la biblioteca truncada.
 - **Registro de lectura**: cronómetro que cuenta tiempo delante del libro, no
   tiempo con el libro abierto.
 
-**353 pruebas**, análisis estático limpio. Todo verificado en dispositivo real
-salvo los ajustes de lectura, pendientes del próximo APK.
+**389 pruebas**, análisis estático limpio. Todo verificado en dispositivo real
+salvo la paginación, pendiente del próximo APK.
 
 ---
 
@@ -236,7 +239,20 @@ pueda mostrarlos en gris y **explicar** en vez de fallar.
 14. **Las dos tipografías de lectura van incrustadas** (Literata y Open Sans,
     unos 250 KB). No se depende del alias «serif» del sistema para la serif
     principal: de eso venía el fallo de Georgia.
-15. **`applicationId` = `com.readlibrary.lector`.** Era `com.uif37020.lector` —
+15. **La página no se guarda.** Cada página sabe en qué carácter del capítulo
+    empieza, y la posición se guarda como siempre —`CharLocator` o
+    `EpubLocator`—. Con otro cuerpo de letra el número de página ya no
+    significa lo mismo; el carácter sí, y por eso subir la letra repagina y te
+    deja en la misma frase.
+16. **Cada imagen ocupa su propia página.** No se sabe lo que mide una imagen
+    sin decodificarla, y dándole la página entera no hace falta saberlo. El
+    precio es que un icono pequeño también se lleva una página.
+17. **`page_flip` es la única dependencia de terceros del lector**, sólo para
+    doblar la hoja, y vive encerrada en `ui/paged_reader.dart`. Es 0.2.5 y
+    pre-1.0: si rompe, se cae esa animación y no la lectura. Ojo con sus
+    gestos, que son opacos y se comen los toques —las zonas de toque van
+    **encima** de la superficie por eso.
+18. **`applicationId` = `com.readlibrary.lector`.** Era `com.uif37020.lector` —
     el número de empleado — y es **permanente** una vez publicas en Play. No lo
     cambies otra vez.
 
@@ -271,6 +287,22 @@ transición entre rutas no llegan a terminar.
 de desarrollo en UTC−6: una prueba que dependa de la hora pasa en un sitio y
 falla en el otro. Ya ocurrió dos veces. El workflow ahora repite la suite bajo
 UTC+14 para delatarlo.
+
+### La trampa de paginar: medir y pintar tienen que dar el mismo número
+
+Paginar es medir por un lado y pintar por otro, y cualquier diferencia entre las
+dos mitades corta el texto. Ya mordió dos veces:
+
+- Al partir un párrafo se descontaba el margen de arriba pero no el de abajo, y
+  la página desbordaba por ocho píxeles.
+- `Text` fusiona el estilo ambiente **y aplica la escala de fuente del
+  sistema**; el paginador no hacía ni lo uno ni lo otro. Con la letra del
+  sistema al 180 % cada página desbordaba por más de mil píxeles.
+
+Por eso todo el aspecto de un bloque vive en `ui/block_layout.dart` y de ahí
+beben los dos, y por eso el lector pinta con `noScaling`: el cuerpo de letra se
+elige dentro de la aplicación. Si hay que tocar márgenes o estilos del texto, se
+tocan **ahí** y en ningún otro sitio.
 
 ### Otra trampa de Android: una fuente que no está no avisa
 
@@ -325,6 +357,10 @@ posición está desacoplada. Anota el avance mientras el widget vive.
 - **El APK de depuración pesa 74 MB.** Un *release* firmado bajaría a 15–20 MB, y
   dividiendo por arquitectura a menos de 10.
 - **No se extraen portadas** de los ficheros todavía.
+- **El lector ignora la escala de fuente del sistema** dentro del libro. Es
+  deliberado: el cuerpo de letra se elige en los ajustes de lectura, que llegan
+  hasta 28, y respetar además la escala del sistema descuadraría el reparto en
+  páginas.
 - **El brillo de pantalla no tiene prueba**: es un canal a la plataforma. Lo que
   sí está probado es que el ajuste se guarda y se lee. Va envuelto en `try` para
   que un fabricante que no lo soporte no impida leer.

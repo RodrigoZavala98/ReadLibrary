@@ -17,6 +17,8 @@ import '../formats/epub_book_source.dart';
 import '../formats/txt_book_source.dart';
 import 'chapters_sheet.dart';
 import 'html_view.dart';
+import 'paged_reader.dart';
+import 'paginator.dart';
 import 'reading_settings_sheet.dart';
 import 'rich_html.dart';
 
@@ -68,6 +70,14 @@ class _ReaderScreenState extends State<ReaderScreen>
   /// menudo reconstruiría el capítulo entero —con sus imágenes— sesenta veces
   /// por segundo. Así sólo se repinta el hilo del margen.
   final _progress = ValueNotifier<double>(0);
+
+  /// El capítulo repartido en páginas, y la combinación con la que se repartió.
+  ///
+  /// Se guarda en caché porque paginar mide cada bloque con `TextPainter`, y
+  /// eso no se puede rehacer en cada fotograma. Sólo cambia cuando cambia el
+  /// capítulo, el tamaño de la pantalla o algún ajuste que mueva el texto.
+  PagedChapter? _paged;
+  Object? _pagedKey;
 
   /// Hasta dónde se ha avanzado dentro del fragmento actual, de 0 a 1.
   ///
@@ -350,6 +360,22 @@ class _ReaderScreenState extends State<ReaderScreen>
     });
   }
 
+  /// Reparte el capítulo en páginas, o devuelve el reparto ya hecho.
+  PagedChapter _pagedFor(Size viewport) {
+    final key = (_chapterIndex, viewport, _settings);
+    final cached = _paged;
+    if (cached != null && _pagedKey == key) return cached;
+
+    final paged = Paginator.paginate(
+      blocks: _blocks,
+      settings: _settings,
+      viewport: viewport,
+    );
+    _paged = paged;
+    _pagedKey = key;
+    return paged;
+  }
+
   /// Dónde está el lector ahora mismo.
   ///
   /// Cada formato traduce «voy por la mitad del capítulo siete» a lo suyo: un
@@ -384,6 +410,56 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
+  /// La lectura por páginas.
+  ///
+  /// El reparto depende del sitio que haya de verdad, así que se calcula dentro
+  /// de un `LayoutBuilder` y no antes: el margen lo elige el usuario y la
+  /// pantalla cambia al girar el teléfono.
+  Widget _buildPaged() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final padding = PagedReader.paddingOf(_settings);
+        final paged = _pagedFor(
+          Size(
+            constraints.maxWidth - padding.horizontal,
+            constraints.maxHeight - padding.vertical,
+          ),
+        );
+
+        // La página se **deduce** de dónde estabas, no se guarda. Con otro
+        // cuerpo de letra el número de página ya no significa lo mismo, pero el
+        // carácter sí: por eso subir la letra te deja en la misma frase.
+        final page = paged.pageForChar(
+          (_lastFraction * paged.totalChars).round(),
+        );
+
+        return PagedReader(
+          key: ValueKey(_chapterIndex),
+          chapter: paged,
+          settings: _settings,
+          initialPage: page,
+          imageFor: _imageFor,
+          onPageChanged: (index) {
+            // Sin `setState`: sólo cambia el hilo del avance, que se pinta
+            // solo, y reconstruir la página entera al pasarla sería absurdo.
+            _lastFraction = paged.fractionAt(index);
+            _updateProgress();
+          },
+          onTapCentre: () =>
+              setState(() => _chromeVisible = !_chromeVisible),
+          onNextChapter: _chapterIndex < _chapterCount - 1
+              ? () => _showChapter(_chapterIndex + 1)
+              : null,
+          // Hacia atrás se entra por el final del capítulo anterior, que es por
+          // donde se entraría pasando la página al revés en un libro.
+          onPreviousChapter: _chapterIndex > 0
+              ? () => _showChapter(_chapterIndex - 1, atFraction: 1)
+              : null,
+        );
+      },
+    );
+  }
+
   Widget _buildReader(ReadingPalette palette) {
     return Scaffold(
       backgroundColor: palette.background,
@@ -394,6 +470,8 @@ class _ReaderScreenState extends State<ReaderScreen>
               _ReaderMessage(text: _error!, palette: palette)
             else if (_source == null)
               const Center(child: CircularProgressIndicator())
+            else if (_settings.mode == ReadingMode.paginado)
+              _buildPaged()
             else
               GestureDetector(
                 behavior: HitTestBehavior.translucent,

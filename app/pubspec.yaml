@@ -50,6 +50,11 @@ dependencies:
   # solo al salir.
   screen_brightness: ^2.1.11
 
+  # Sólo para la animación de doblar la hoja. Es 0.2.5 y pre-1.0, así que vive
+  # aislado detrás de `ui/paged_reader.dart`: si algún día rompe con una versión
+  # de Flutter, se cae esa animación y no el lector.
+  page_flip: ^0.2.5
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

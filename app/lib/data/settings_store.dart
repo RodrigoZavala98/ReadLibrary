@@ -31,6 +31,8 @@ class SettingsStore {
         // quien ya tuviera la aplicación instalada.
         'theme': settings.theme.name,
         'font': settings.font.name,
+        'mode': settings.mode.name,
+        'animation': settings.animation.name,
         'fontSize': settings.fontSize,
         'lineHeight': settings.lineHeight,
         'margin': settings.margin,
@@ -57,6 +59,12 @@ class SettingsStore {
     return ReadingSettings(
       theme: _byName(ReadingTheme.values, parsed['theme'], ReadingTheme.claro),
       font: _byName(ReadingFont.values, parsed['font'], ReadingFont.literata),
+      mode: _byName(ReadingMode.values, parsed['mode'], ReadingMode.paginado),
+      animation: _byName(
+        PageAnimation.values,
+        parsed['animation'],
+        PageAnimation.deslizar,
+      ),
       fontSize: _number(parsed['fontSize']) ?? 19,
       lineHeight: _number(parsed['lineHeight']) ?? 1.6,
       margin: _number(parsed['margin']) ?? 24,

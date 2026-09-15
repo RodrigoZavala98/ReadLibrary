@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
 import '../domain/reading_settings.dart';
+import 'block_layout.dart';
 import 'rich_html.dart';
 
 /// De dónde salen los bytes de una imagen del capítulo. `null` si no está.
@@ -12,9 +13,13 @@ typedef ImageResolver = Uint8List? Function(String src);
 /// Pinta un bloque de [RichHtml] con la tipografía del lector.
 ///
 /// El reparto es deliberado: [RichHtml] decide **qué** hay —y eso se prueba sin
-/// pintar nada— y este widget decide **cómo se ve**, aplicando los
-/// [ReadingSettings] que el usuario controla. El HTML no manda aquí: un EPUB
-/// con su hoja de estilos se ve con la tipografía del lector, no con la suya.
+/// pintar nada—, [BlockLayout] decide **cuánto ocupa** y este widget sólo lo
+/// pone en pantalla. El HTML no manda aquí: un EPUB con su hoja de estilos se
+/// ve con la tipografía del lector, no con la suya.
+///
+/// Ni un margen ni un tamaño se deciden en este fichero. Todos salen de
+/// [BlockLayout], porque son los mismos números con los que el paginador mide,
+/// y si se separasen el texto se cortaría mal al pasar de página.
 class HtmlBlockView extends StatelessWidget {
   const HtmlBlockView({
     required this.block,
@@ -29,122 +34,104 @@ class HtmlBlockView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final insets = BlockLayout.insetsOf(block);
+    final span = BlockLayout.spanOf(block, style);
+
     return switch (block) {
-      HtmlParagraph(:final runs) => _spaced(
-        Text.rich(
-          _spanOf(runs, style.toTextStyle()),
-          textAlign: TextAlign.justify,
-        ),
+      HtmlParagraph() => Padding(
+        padding: insets,
+        child: _text(span!, align: TextAlign.justify),
       ),
-      HtmlHeading(:final level, :final runs) => _heading(level, runs),
-      HtmlQuote(:final runs) => _quote(runs),
-      HtmlListItem(:final marker, :final runs, :final depth) => _listItem(
-        marker,
-        runs,
-        depth,
-      ),
-      HtmlPre(:final text) => _pre(text),
+      HtmlHeading() => Padding(padding: insets, child: _text(span!)),
+      HtmlQuote() => _quote(insets, span!),
+      HtmlListItem(:final marker) => _listItem(insets, span!, marker),
+      HtmlPre() => _pre(insets, span!),
       HtmlRule() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 22),
+        padding: insets,
         child: Divider(
-          height: 1,
-          thickness: 1,
+          height: BlockLayout.ruleThickness,
+          thickness: BlockLayout.ruleThickness,
           color: style.palette.muted.withValues(alpha: 0.35),
         ),
       ),
-      HtmlImage(:final src, :final alt) => _image(src, alt),
+      HtmlImage(:final src, :final alt) => Padding(
+        padding: insets,
+        child: _image(src, alt),
+      ),
     };
   }
 
-  Widget _spaced(Widget child) =>
-      Padding(padding: const EdgeInsets.only(bottom: 18), child: child);
-
-  Widget _heading(int level, List<TextRun> runs) {
-    // Escala descendente por nivel. Se corta en el 3 porque a partir de ahí los
-    // encabezados de un EPUB son subdivisiones que no merecen más cuerpo que el
-    // texto: engordarlos rompe la mancha de la página.
-    final scale = switch (level) {
-      1 => 1.55,
-      2 => 1.32,
-      3 => 1.15,
-      _ => 1.0,
-    };
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 20),
-      child: Text.rich(
-        _spanOf(
-          runs,
-          style.toTextStyle().copyWith(
-            fontSize: style.fontSize * scale,
-            height: 1.25,
-            fontWeight: FontWeight.w600,
+  Widget _quote(EdgeInsets insets, TextSpan span) {
+    return Container(
+      // La barra se pinta dentro del hueco que el paginador ya ha contado: el
+      // relleno es la sangría menos el grosor de la barra.
+      padding: insets.copyWith(left: insets.left - BlockLayout.quoteBar),
+      decoration: BoxDecoration(
+        // Una raya al margen en lugar de comillas o sangría a los dos lados: se
+        // distingue de un vistazo sin robar anchura de línea, que en un móvil
+        // es lo más escaso que hay.
+        border: Border(
+          left: BorderSide(
+            color: style.palette.muted.withValues(alpha: 0.45),
+            width: BlockLayout.quoteBar,
           ),
         ),
       ),
+      child: _text(span),
     );
   }
 
-  Widget _quote(List<TextRun> runs) {
-    return _spaced(
-      Container(
-        padding: const EdgeInsets.only(left: 16),
-        decoration: BoxDecoration(
-          // Una raya al margen en lugar de comillas o sangría a los dos lados:
-          // se distingue de un vistazo sin robar anchura de línea, que en un
-          // móvil es lo más escaso que hay.
-          border: Border(
-            left: BorderSide(
-              color: style.palette.muted.withValues(alpha: 0.45),
-              width: 3,
-            ),
-          ),
-        ),
-        child: Text.rich(
-          _spanOf(
-            runs,
-            style.toTextStyle().copyWith(
-              fontStyle: FontStyle.italic,
-              color: style.palette.muted,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _listItem(String marker, List<TextRun> runs, int depth) {
+  Widget _listItem(EdgeInsets insets, TextSpan span, String marker) {
     return Padding(
-      padding: EdgeInsets.only(bottom: 10, left: 8.0 + (depth - 1) * 16),
+      padding: insets.copyWith(left: insets.left - BlockLayout.markerWidth),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 26,
+            width: BlockLayout.markerWidth,
             child: Text(
               marker,
               style: style.toTextStyle().copyWith(color: style.palette.muted),
             ),
           ),
-          Expanded(child: Text.rich(_spanOf(runs, style.toTextStyle()))),
+          Expanded(child: _text(span)),
         ],
       ),
     );
   }
 
-  Widget _pre(String text) {
-    return _spaced(
+  Widget _pre(EdgeInsets insets, TextSpan span) {
+    return Padding(
+      padding: insets,
       // Con scroll horizontal propio: el texto preformateado no se puede
       // reajustar sin destruirlo, y cortarlo es peor que dejar arrastrarlo.
-      SingleChildScrollView(
+      child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Text(
-          text,
-          style: style.toTextStyle().copyWith(
-            fontFamily: 'monospace',
-            fontSize: style.fontSize * 0.88,
-          ),
-        ),
+        child: _text(span),
+      ),
+    );
+  }
+
+  /// El texto de un bloque, pintado **exactamente como se midió**.
+  ///
+  /// Dos precauciones, y las dos vienen de que paginar exige que medir y pintar
+  /// den el mismo número al píxel:
+  ///
+  /// `Text.rich` envuelve el span en otro con el estilo ambiente, y ese
+  /// envoltorio manda en las métricas del párrafo. Por eso se fija el ambiente
+  /// al mismo estilo del bloque, que es el envoltorio que `BlockLayout.paint`
+  /// replica al medir. Sin esto la página desbordaba por unos píxeles.
+  ///
+  /// Y se ignora la escala de fuente del sistema: en un lector con su propio
+  /// control de tamaño el cuerpo lo elige el usuario aquí dentro, y además una
+  /// escala que el paginador no conoce descuadraría el reparto.
+  Widget _text(TextSpan span, {TextAlign align = TextAlign.start}) {
+    return DefaultTextStyle(
+      style: span.style!,
+      child: Text.rich(
+        span,
+        textAlign: align,
+        textScaler: TextScaler.noScaling,
       ),
     );
   }
@@ -153,55 +140,27 @@ class HtmlBlockView extends StatelessWidget {
     final bytes = imageFor?.call(src);
     if (bytes == null) return _missingImage(alt);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      child: Image.memory(
-        bytes,
-        fit: BoxFit.contain,
-        // Un EPUB puede traer la imagen en un formato que Flutter no decodifica
-        // —SVG, sobre todo, muy común en las cubiertas—. Se enseña el texto
-        // alternativo en lugar del icono roto del sistema.
-        errorBuilder: (_, _, _) => _missingImage(alt),
-      ),
+    return Image.memory(
+      bytes,
+      fit: BoxFit.contain,
+      // Un EPUB puede traer la imagen en un formato que Flutter no decodifica
+      // —SVG, sobre todo, muy común en las cubiertas—. Se enseña el texto
+      // alternativo en lugar del icono roto del sistema.
+      errorBuilder: (_, _, _) => _missingImage(alt),
     );
   }
 
   Widget _missingImage(String? alt) {
     final text = (alt ?? '').trim();
     if (text.isEmpty) return const SizedBox.shrink();
-    return _spaced(
-      Text(
-        text,
-        textAlign: TextAlign.center,
-        style: style.toTextStyle().copyWith(
-          fontStyle: FontStyle.italic,
-          fontSize: style.fontSize * 0.9,
-          color: style.palette.muted,
-        ),
+    return Text(
+      text,
+      textAlign: TextAlign.center,
+      style: style.toTextStyle().copyWith(
+        fontStyle: FontStyle.italic,
+        fontSize: style.fontSize * 0.9,
+        color: style.palette.muted,
       ),
-    );
-  }
-
-  /// Convierte los trozos con énfasis en un `TextSpan` sobre [base].
-  static TextSpan _spanOf(List<TextRun> runs, TextStyle base) {
-    return TextSpan(
-      children: [
-        for (final run in runs)
-          TextSpan(
-            text: run.text,
-            style: TextStyle(
-              fontStyle: run.italic ? FontStyle.italic : null,
-              fontWeight: run.bold ? FontWeight.w700 : null,
-              fontFamily: run.code ? 'monospace' : null,
-              // Los enlaces se subrayan pero no navegan todavía. Se marcan
-              // igualmente: un enlace invisible es peor que uno que no lleva a
-              // ninguna parte, porque el texto de alrededor deja de tener
-              // sentido («ver la nota siguiente»).
-              decoration: run.link ? TextDecoration.underline : null,
-            ),
-          ),
-      ],
-      style: base,
     );
   }
 }

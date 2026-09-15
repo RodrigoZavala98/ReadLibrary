@@ -95,6 +95,47 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               ],
             ),
             const SizedBox(height: 22),
+            _Label('Modo de lectura', palette: palette),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final mode in ReadingMode.values)
+                  _Chip(
+                    label: Text(mode.label, style: const TextStyle(fontSize: 14)),
+                    selected: mode == _settings.mode,
+                    palette: palette,
+                    onTap: () => _update(_settings.copyWith(mode: mode)),
+                  ),
+              ],
+            ),
+            if (_settings.mode == ReadingMode.paginado) ...[
+              const SizedBox(height: 22),
+              _Label('Paso de página', palette: palette),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final animation in PageAnimation.values)
+                    _Chip(
+                      label: Text(
+                        animation.label,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      selected: animation == _settings.animation,
+                      palette: palette,
+                      onTap: () =>
+                          _update(_settings.copyWith(animation: animation)),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 22),
+            // La animación sólo aparece en modo paginado: en desplazamiento
+            // continuo no hay páginas que pasar, y enseñar un ajuste que no
+            // hace nada es peor que no enseñarlo.
             _Label('Fuente', palette: palette),
             const SizedBox(height: 8),
             Wrap(
