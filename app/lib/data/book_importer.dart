@@ -62,6 +62,9 @@ class BookImporter {
   final Directory libraryDir;
 
   static const _reasons = {
+    BookFormat.pdf:
+        'El soporte para PDF todavía está en camino. Los cómics en CBZ sí se '
+        'pueden leer ya.',
     BookFormat.cbr:
         'Los CBR son archivos RAR, y no existe forma de descomprimirlos '
         'legalmente desde Dart. Conviértelo a CBZ y funcionará.',

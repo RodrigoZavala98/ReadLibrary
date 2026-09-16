@@ -114,6 +114,27 @@ void main() {
       expect(await repo.loadAll(), isEmpty);
     });
 
+    test('un PDF se rechaza al importarlo, no al abrirlo', () async {
+      // El rechazo tiene que ocurrir aquí. Mientras PDF estuvo marcado como
+      // soportado sin tener lector, el fichero se copiaba al almacenamiento
+      // privado y entraba en la biblioteca, y el usuario sólo se enteraba de
+      // que no se podía leer al tocarlo.
+      final result = await importer.import(await crear('manual.pdf'));
+
+      expect(result, isA<UnsupportedFormat>());
+      final r = result as UnsupportedFormat;
+      expect(r.format, BookFormat.pdf);
+      expect(r.reason, contains('PDF'));
+      expect(await repo.loadAll(), isEmpty);
+    });
+
+    test('un CBZ sí se importa: ése ya se lee', () async {
+      final result = await importer.import(await crear('comic.cbz'));
+
+      expect(result, isA<ImportedOk>());
+      expect((result as ImportedOk).book.format, BookFormat.cbz);
+    });
+
     test('FB2 y RTF también dan un motivo', () async {
       for (final name in ['libro.fb2', 'doc.rtf']) {
         final result = await importer.import(await crear(name));

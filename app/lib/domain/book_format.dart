@@ -1,8 +1,14 @@
 /// Formatos que la aplicación sabe abrir.
 ///
-/// El alcance de la v1 es EPUB, TXT, PDF y CBZ. FB2, CBR y RTF quedan
-/// declarados aquí para que el resto del código ya los contemple, pero
-/// [BookFormat.isSupported] los marca como no disponibles:
+/// Hoy se leen EPUB, TXT y CBZ. PDF, FB2, CBR y RTF quedan declarados aquí
+/// para que el resto del código ya los contemple, pero [BookFormat.isSupported]
+/// los marca como no disponibles, y eso hace que el importador los rechace **al
+/// importarlos**, con una explicación, en lugar de dejarlos entrar en la
+/// biblioteca para fallar después al abrirlos:
+///
+///  - PDF está por hacer. Es el único de los cuatro que no tiene ningún
+///    impedimento de fondo: hay un paquete mantenido y con licencia MIT, pdfrx,
+///    y la interfaz de página fija ya está construida y en uso por el CBZ.
 ///
 ///  - CBR es un contenedor RAR y no existe descompresor en Dart puro; la
 ///    licencia de unrar prohíbe reimplementar el algoritmo.
@@ -12,7 +18,7 @@
 enum BookFormat {
   epub(extensions: {'epub'}, isSupported: true),
   txt(extensions: {'txt', 'md'}, isSupported: true),
-  pdf(extensions: {'pdf'}, isSupported: true),
+  pdf(extensions: {'pdf'}, isSupported: false),
   cbz(extensions: {'cbz', 'cbt'}, isSupported: true),
 
   fb2(extensions: {'fb2'}, isSupported: false),
