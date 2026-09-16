@@ -1,7 +1,7 @@
 # Lector — traspaso de contexto
 
-Estado a **14 de septiembre de 2026**, commit «Paginación real y animaciones de
-paso de página».
+Estado a **15 de septiembre de 2026**, commit «Rechazar el PDF al importarlo,
+no al abrirlo».
 Repositorio: <https://github.com/RodrigoZavala98/ReadLibrary> (**público**).
 
 Aplicación Android de lectura de libros, escrita en Flutter, **completamente
@@ -128,9 +128,14 @@ para que un corte a mitad no deje la biblioteca truncada.
 - **Perfil local**: nombre opcional y meta diaria, detrás del avatar.
 - **Registro de lectura**: cronómetro que cuenta tiempo delante del libro, no
   tiempo con el libro abierto.
+- **Leer un cómic (CBZ y CBT)**: páginas ordenadas como las ordenaría una
+  persona, zoom con dos dedos, paso por deslizamiento o por los bordes, sentido
+  manga, deslizador para saltar de página, y los ficheros que no son cómics
+  rechazados con una explicación. Comparte con el lector de texto el
+  cronómetro, la posición y la salida ordenada; no comparte nada de pintar.
 
-**389 pruebas**, análisis estático limpio. Todo verificado en dispositivo real
-salvo la paginación, pendiente del próximo APK.
+**434 pruebas**, análisis estático limpio. Verificado en dispositivo real todo
+salvo la paginación y el lector de cómics, los dos pendientes del próximo APK.
 
 ---
 
@@ -141,15 +146,21 @@ salvo la paginación, pendiente del próximo APK.
 `domain/highlight.dart` tiene el modelo. Falta **todo** lo demás: capturar la
 selección de texto en el lector, persistir, y la pantalla de la sección.
 
-### 4.2 PDF y CBZ
+### 4.2 PDF
+
+CBZ ya está hecho, y con él la mitad del camino: `FixedLayoutSource`,
+`PageLocator` y la pantalla de página fija existen y están en uso, así que un
+PDF sólo tiene que rellenar `renderPage` rasterizando.
 
 - **PDF → `pdfrx` 2.6.1** (MIT, 449k descargas, mantenido). **No uses
   `syncfusion_flutter_pdfviewer`**: es comercial, y su licencia gratuita tiene
   topes de facturación y de número de desarrolladores que una empresa como esta
   casi seguro no cumple.
-- **CBZ → `archive`**, que ya es dependencia directa desde EPUB. Ojo: hasta
-  ahora este documento decía que venía como dependencia transitiva, y era
-  falso; no estaba en `pubspec.lock`.
+- Es el único sitio donde `targetWidth` significa algo. El CBZ lo ignora
+  —devuelve la imagen tal cual— y el parámetro existe precisamente para esto.
+- Cuando esté, basta con devolver `BookFormat.pdf` a `isSupported: true` y
+  quitar su motivo del importador: `openBook` reparte por `LayoutKind`, así que
+  un PDF caerá solo del lado del lector de página fija sin tocar el reparto.
 
 ### 4.3 Lo pequeño que falta
 
@@ -161,6 +172,9 @@ selección de texto en el lector, persistir, y la pantalla de la sección.
   necesita precisión al minuto. Harán falta `POST_NOTIFICATIONS` (permiso en
   runtime desde Android 13) y `RECEIVE_BOOT_COMPLETED`.
 - Borrar un libro de la biblioteca.
+- Las portadas de un cómic salen gratis: la página 0. `CbzBookSource` no la
+  extrae hoy a propósito, para no descomprimirla en cada apertura mientras no
+  la pinte nadie.
 - Las insignias no guardan **cuándo** se consiguieron: se sabe que están, no el
   día. Deducir la fecha exigiría recorrer el historial criterio a criterio.
 - Colecciones: el campo `collection` existe en el modelo, sin interfaz.
@@ -174,8 +188,10 @@ selección de texto en el lector, persistir, y la pantalla de la sección.
 
 ## 5. Formatos descartados, y por qué
 
-Están declarados en `BookFormat` con `isSupported: false`, para que la biblioteca
-pueda mostrarlos en gris y **explicar** en vez de fallar.
+Están declarados en `BookFormat` con `isSupported: false`, para que la
+biblioteca pueda mostrarlos en gris y **explicar** en vez de fallar. Ojo: PDF
+también está en `false`, pero por otro motivo —está por hacer, no descartado—;
+vive en la sección 4.2.
 
 - **CBR** — es un contenedor RAR. No existe descompresor en Dart puro y la
   licencia de `unrar` prohíbe expresamente reimplementar el algoritmo. Solo sería
@@ -255,6 +271,26 @@ pueda mostrarlos en gris y **explicar** en vez de fallar.
 18. **`applicationId` = `com.readlibrary.lector`.** Era `com.uif37020.lector` —
     el número de empleado — y es **permanente** una vez publicas en Play. No lo
     cambies otra vez.
+19. **El cómic se lee sobre negro**, no sobre el papel cálido. Es la excepción
+    razonada al punto 3: la página de un cómic trae su propio papel dibujado
+    dentro, y rodearla de crema la hace pelear con el color de la viñeta.
+20. **Lo transversal del lector vive en `ui/reader_session.dart`**, no
+    duplicado en cada pantalla. Cronómetro, guardado idempotente, salida
+    ordenada y brillo son exactamente los cuatro sitios donde estuvieron los
+    cuatro fallos más caros del proyecto; escribirlos dos veces sería
+    invitarlos a volver. Las hijas ponen el formato y nada más.
+21. **El sentido de lectura de los cómics es global**, como el resto de
+    ajustes, pero **se edita desde el cómic**. No se deduce del fichero porque
+    el fichero no lo dice: un CBZ es un ZIP con imágenes, y adivinarlo por el
+    título sería acertar a veces.
+22. **Un formato sin lector se rechaza al importar**, no al abrir. Mientras PDF
+    estuvo en `isSupported: true` sin tener lector, el fichero se copiaba al
+    almacenamiento privado y entraba en la biblioteca, y el usuario se enteraba
+    al tocarlo. Si añades un formato al enum, la puerta va en el importador.
+23. **El orden de las páginas de un CBZ es el alfabético natural de los nombres
+    de sus entradas.** No hay otra fuente de verdad dentro del fichero. El
+    alfabético a secas pone `pagina10` entre `pagina1` y `pagina2` y baraja el
+    cómic entero sin dar ningún error.
 
 ---
 
@@ -287,6 +323,29 @@ transición entre rutas no llegan a terminar.
 de desarrollo en UTC−6: una prueba que dependa de la hora pasa en un sitio y
 falla en el otro. Ya ocurrió dos veces. El workflow ahora repite la suite bajo
 UTC+14 para delatarlo.
+
+**Un guardado «dispara y olvida» necesita su propia ventana de tiempo real, o
+la prueba miente.** Esto costó encontrarlo y merece leerse entero. La prueba
+«salir y desmontar guarda una sola sesión, no dos» seguía pasando **con el
+testigo que evita el guardado doble quitado**. Instrumentando con trazas se vio
+que `persistAll` sí se llamaba las dos veces, pero la segunda —la de reserva de
+`dispose()`, que nadie espera— se quedaba detenida en la escritura del libro y
+no llegaba nunca a registrar la sesión. La prueba contaba una sesión y se daba
+por buena. Ahora hay una ventana de tiempo real antes de contar, y la prueba
+falla sin el testigo, que era la condición para poder fiarse de ella.
+
+La moraleja general: **comprueba que la mutación se aplicó de verdad** antes de
+concluir que una prueba protege algo. Aquí se descubrió al validar la prueba
+reintroduciendo el fallo, que es exactamente para lo que sirve esa costumbre.
+
+**La suite es intermitente en este equipo.** `library_refresh_test` y
+`reader_persistence_test` han fallado en una pasada completa y pasado en la
+siguiente y en aislado: son las dos que dependen de ventanas de tiempo real
+sobre disco, y con la máquina cargada esas ventanas se quedan cortas. Un fallo
+en esos dos hay que **confirmarlo repitiendo** antes de darlo por regresión. CI
+corre la suite dos veces, así que la probabilidad de que tumbe un build sano
+está duplicada; si empieza a molestar, la salida es que `asentar()` espere a una
+condición en lugar de a un número fijo de ventanas.
 
 ### La trampa de paginar: medir y pintar tienen que dar el mismo número
 
@@ -371,6 +430,14 @@ posición está desacoplada. Anota el avance mientras el widget vive.
 - **El progreso de un EPUB se reparte por el peso en bytes** de cada documento
   del lomo, no por su número de palabras. Un capítulo con mucho marcado o muchas
   imágenes pesa más de lo que se tarda en leerlo.
+- **Las páginas de un cómic se descomprimen en el hilo de la interfaz.** Se
+  precargan la actual y sus vecinas para que no se note, pero una página muy
+  grande puede dar un tirón al pasarla. La salida, si molesta en el
+  dispositivo, es un isolate con su propio descriptor del archivo; no una
+  caché más pequeña.
+- **El zoom de un cómic no sobrevive al cambio de página**: vuelve a 1 a
+  propósito, porque quedarse ampliado en la esquina de la página siguiente
+  desorienta más que ayudar.
 - **Las insignias se derivan del historial**, no se guardan al desbloquearse.
   A cambio de no tener un fichero más que pueda desincronizarse, borrar de la
   biblioteca un libro terminado puede volver a bloquear una insignia, y cambiar
