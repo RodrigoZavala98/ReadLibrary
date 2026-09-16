@@ -6,7 +6,7 @@ import '../domain/library_book.dart';
 import '../domain/reader_profile.dart';
 import '../domain/reading_streak.dart';
 import 'profile_sheet.dart';
-import 'reader_screen.dart';
+import 'open_book.dart';
 import 'streak_ring.dart';
 
 /// Mi Refugio: la pantalla de volver.
@@ -65,9 +65,7 @@ class _RefugioScreenState extends State<RefugioScreen> {
   Future<void> _continue() async {
     final book = _continueWith;
     if (book == null) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => ReaderScreen(book: book)),
-    );
+    await openBook(context, book);
     await _reload();
   }
 

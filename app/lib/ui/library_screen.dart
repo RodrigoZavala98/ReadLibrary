@@ -7,7 +7,7 @@ import '../app_services.dart';
 import '../core/theme/app_theme.dart';
 import '../data/book_importer.dart';
 import '../domain/library_book.dart';
-import 'reader_screen.dart';
+import 'open_book.dart';
 
 /// La biblioteca: lo que hay, y el botón para añadir más.
 class LibraryScreen extends StatefulWidget {
@@ -87,9 +87,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _open(LibraryBook book) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => ReaderScreen(book: book)),
-    );
+    await openBook(context, book);
     // Al volver, el progreso puede haber cambiado.
     await _reload();
   }

@@ -60,7 +60,22 @@ void main() {
     expect(await releer(), ReadingSettings());
   });
 
+  test('el sentido de lectura de los cómics sobrevive a releer', () async {
+    // Es global, como el resto de ajustes: quien lee manga lo lee siempre.
+    await store.save(
+      ReadingSettings(comicDirection: ComicDirection.manga),
+    );
+
+    expect((await releer()).comicDirection, ComicDirection.manga);
+  });
+
   group('valores desconocidos', () {
+    test('un sentido de lectura que no existe cae a occidental', () async {
+      await file.writeAsString('{"comicDirection":"boustrophedon"}');
+
+      expect((await releer()).comicDirection, ComicDirection.occidental);
+    });
+
     test('un tema que no existe cae al de por defecto', () async {
       // Puede venir de una versión más nueva de la aplicación: alguien la
       // instaló, eligió un tema que aquí no existe y volvió atrás.

@@ -80,6 +80,21 @@ enum PageAnimation {
   final String label;
 }
 
+/// Hacia dónde se pasa la página en un cómic.
+///
+/// Es un ajuste y no algo que se deduzca del fichero porque un CBZ no lleva
+/// dentro ningún dato que lo diga: es un ZIP con imágenes. Adivinarlo por el
+/// idioma del título o por la forma de las páginas sería acertar a veces y
+/// equivocarse el resto, y equivocarse aquí significa leer el cómic al revés.
+enum ComicDirection {
+  occidental(label: 'De izquierda a derecha'),
+  manga(label: 'De derecha a izquierda');
+
+  const ComicDirection({required this.label});
+
+  final String label;
+}
+
 class ReadingSettings {
   /// Los rangos se recortan **aquí**, no en la interfaz.
   ///
@@ -93,6 +108,7 @@ class ReadingSettings {
     this.font = ReadingFont.literata,
     this.mode = ReadingMode.paginado,
     this.animation = PageAnimation.deslizar,
+    this.comicDirection = ComicDirection.occidental,
     double fontSize = 19,
     double lineHeight = 1.6,
     double margin = 24,
@@ -120,6 +136,12 @@ class ReadingSettings {
 
   final PageAnimation animation;
 
+  /// Sentido de lectura de los cómics.
+  ///
+  /// Es global, como el resto: quien lee manga lo lee siempre, y obligarle a
+  /// cambiarlo en cada tomo sería peor que la alternativa.
+  final ComicDirection comicDirection;
+
   final double fontSize;
 
   /// Múltiplo del tamaño de fuente, no píxeles absolutos.
@@ -142,6 +164,7 @@ class ReadingSettings {
     ReadingFont? font,
     ReadingMode? mode,
     PageAnimation? animation,
+    ComicDirection? comicDirection,
     double? fontSize,
     double? lineHeight,
     double? margin,
@@ -153,6 +176,7 @@ class ReadingSettings {
       font: font ?? this.font,
       mode: mode ?? this.mode,
       animation: animation ?? this.animation,
+      comicDirection: comicDirection ?? this.comicDirection,
       fontSize: fontSize ?? this.fontSize,
       lineHeight: lineHeight ?? this.lineHeight,
       margin: margin ?? this.margin,
@@ -169,6 +193,7 @@ class ReadingSettings {
       other.font == font &&
       other.mode == mode &&
       other.animation == animation &&
+      other.comicDirection == comicDirection &&
       other.fontSize == fontSize &&
       other.lineHeight == lineHeight &&
       other.margin == margin &&
@@ -180,6 +205,7 @@ class ReadingSettings {
     font,
     mode,
     animation,
+    comicDirection,
     fontSize,
     lineHeight,
     margin,
