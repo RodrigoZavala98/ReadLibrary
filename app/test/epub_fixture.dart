@@ -1,25 +1,10 @@
-import 'dart:typed_data';
-
-import 'package:archive/archive.dart';
-
-/// Fabrica EPUB de mentira para las pruebas.
-///
-/// Se construyen **en memoria** en lugar de guardar ficheros de ejemplo en el
-/// repositorio. Dos razones: no se versiona ni un binario, y —la que de verdad
-/// importa— se pueden fabricar a voluntad los EPUB rotos, que son los casos
-/// interesantes. Un EPUB sin índice, con el lomo en otro orden o con DRM no se
-/// consigue descargando libros; se construye.
-Uint8List zipOf(Map<String, Object> entries) {
-  final archive = Archive();
-  entries.forEach((name, content) {
-    archive.add(
-      content is String
-          ? ArchiveFile.string(name, content)
-          : ArchiveFile.bytes(name, content as List<int>),
-    );
-  });
-  return Uint8List.fromList(ZipEncoder().encode(archive));
-}
+// Fabrica EPUB de mentira para las pruebas: el contenedor y las piezas de XML
+// que lo componen.
+//
+// El `zipOf` que los comprime se mudó a `archive_fixture.dart` cuando llegaron
+// los cómics, que necesitaban lo mismo. Se reexporta desde aquí para que las
+// pruebas que ya importaban este fichero lo sigan encontrando donde estaba.
+export 'archive_fixture.dart';
 
 /// El `META-INF/container.xml` de cualquier EPUB.
 String containerFor(String opfPath) =>
