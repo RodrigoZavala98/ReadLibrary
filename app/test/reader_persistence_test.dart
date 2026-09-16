@@ -161,6 +161,16 @@ void main() {
     });
     await asentar(tester);
 
+    // Al guardado de reserva de `dispose()` hay que darle su propia ventana de
+    // tiempo real antes de contar las sesiones, y no es un adorno: sale
+    // disparado sin que nadie lo espere, y sin esta ventana se queda detenido
+    // en la escritura del libro sin llegar nunca a registrar la sesión. Contar
+    // sin esperarlo daba una sola sesión **aunque se quitara el testigo que
+    // esta prueba dice comprobar**, que es exactamente lo que no puede pasar.
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 300)),
+    );
+
     final sesiones = await tester.runAsync(services.sessions.loadAll);
     expect(sesiones, hasLength(1));
     expect(sesiones!.single.duration, const Duration(minutes: 9));
