@@ -158,7 +158,7 @@ void main() {
 
       await tocarEn(tester, 0.5);
 
-      expect(find.byTooltip('Ajustes de lectura'), findsOneWidget);
+      expect(find.byTooltip('Texto'), findsOneWidget);
       expect(avance(tester), antes);
     });
 
@@ -220,7 +220,7 @@ void main() {
       final antes = avance(tester);
 
       await tocarEn(tester, 0.5);
-      await tester.tap(find.byTooltip('Ajustes de lectura'));
+      await tester.tap(find.byTooltip('Texto'));
       await asentar(tester);
       final mas = find.byTooltip('Tamaño: más');
       await tester.ensureVisible(mas);

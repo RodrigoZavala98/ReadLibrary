@@ -101,18 +101,20 @@ void main() {
     await tester.pump();
   }
 
-  Future<void> abrirAjustes(WidgetTester tester) async {
+  /// Saca los controles y despliega el panel del botón [boton] de la píldora.
+  Future<void> abrirPanel(WidgetTester tester, String boton) async {
     await sacarControles(tester);
-    await tester.tap(find.byTooltip('Ajustes de lectura'));
+    await tester.tap(find.byTooltip(boton));
     await asentar(tester);
   }
 
-  /// Toca algo de la hoja de ajustes, subiéndolo antes a la vista.
+  /// Toca algo del panel, subiéndolo antes a la vista.
   ///
-  /// La hoja tiene más filas de las que caben en el lienzo de pruebas, así que
-  /// sin esto el toque cae fuera de la pantalla y no pasa nada. En un móvil de
-  /// verdad ocurre lo mismo: por eso la hoja lleva su propio desplazamiento.
-  Future<void> tocarEnLaHoja(WidgetTester tester, Finder objetivo) async {
+  /// El panel de texto tiene más filas de las que caben en el lienzo de
+  /// pruebas, así que sin esto el toque cae fuera de la pantalla y no pasa
+  /// nada. En un móvil de verdad ocurre lo mismo: por eso el panel lleva su
+  /// propio desplazamiento.
+  Future<void> tocarEnElPanel(WidgetTester tester, Finder objetivo) async {
     await tester.ensureVisible(objetivo);
     await tester.pump();
     await tester.tap(objetivo);
@@ -134,7 +136,7 @@ void main() {
         findsOneWidget,
         reason: 'el hilo del margen está siempre, los controles no',
       );
-      expect(find.byTooltip('Ajustes de lectura'), findsNothing);
+      expect(find.byTooltip('Texto'), findsNothing);
     });
 
     testWidgets('con los controles fuera se dice también el capítulo',
@@ -151,9 +153,9 @@ void main() {
     testWidgets('cambiar de tema repinta el libro al momento', (tester) async {
       await abrirLector(tester, await prepararTxt(tester));
       final antes = fondoDelLector(tester);
-      await abrirAjustes(tester);
+      await abrirPanel(tester, 'Temas');
 
-      await tocarEnLaHoja(tester, find.text('Oscuro'));
+      await tocarEnElPanel(tester, find.text('Oscuro'));
 
       expect(fondoDelLector(tester), isNot(antes));
       expect(
@@ -164,9 +166,9 @@ void main() {
 
     testWidgets('cambiar la fuente llega al texto', (tester) async {
       await abrirLector(tester, await prepararTxt(tester));
-      await abrirAjustes(tester);
+      await abrirPanel(tester, 'Texto');
 
-      await tocarEnLaHoja(tester, find.text('Open Sans'));
+      await tocarEnElPanel(tester, find.text('Open Sans'));
 
       expect(estiloAplicado(tester).fontFamily, 'Open Sans');
     });
@@ -174,9 +176,9 @@ void main() {
     testWidgets('el tamaño sube de uno en uno y se aplica', (tester) async {
       await abrirLector(tester, await prepararTxt(tester));
       final antes = estiloAplicado(tester).fontSize;
-      await abrirAjustes(tester);
+      await abrirPanel(tester, 'Texto');
 
-      await tocarEnLaHoja(tester, find.byTooltip('Tamaño: más'));
+      await tocarEnElPanel(tester, find.byTooltip('Tamaño: más'));
 
       expect(estiloAplicado(tester).fontSize, antes + 1);
     });
@@ -185,12 +187,16 @@ void main() {
         (tester) async {
       final book = await prepararTxt(tester);
       await abrirLector(tester, book);
-      await abrirAjustes(tester);
+      await abrirPanel(tester, 'Texto');
 
-      await tocarEnLaHoja(tester, find.byTooltip('Interlineado: más'));
-      await tocarEnLaHoja(tester, find.text('Sepia'));
+      await tocarEnElPanel(tester, find.byTooltip('Interlineado: más'));
+      // Se cambia de panel sin cerrar nada, que es lo que la hoja modal de
+      // antes no dejaba hacer: había que cerrarla y volver a abrirla.
+      await tester.tap(find.byTooltip('Temas'));
+      await asentar(tester);
+      await tocarEnElPanel(tester, find.text('Sepia'));
 
-      // Se guarda en cada toque, no al cerrar la hoja.
+      // Se guarda en cada toque, no al cerrar el panel.
       final guardados = await tester.runAsync(services.settings.load);
       expect(guardados!.theme, ReadingTheme.sepia);
 
@@ -208,11 +214,11 @@ void main() {
         (tester) async {
       // El interruptor empieza puesto: de fábrica no se toca el brillo.
       await abrirLector(tester, await prepararTxt(tester));
-      await abrirAjustes(tester);
+      await abrirPanel(tester, 'Brillo');
 
       expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
 
-      await tocarEnLaHoja(tester, find.byType(Switch));
+      await tocarEnElPanel(tester, find.byType(Switch));
 
       final guardados = await tester.runAsync(services.settings.load);
       expect(guardados!.usesSystemBrightness, isFalse);

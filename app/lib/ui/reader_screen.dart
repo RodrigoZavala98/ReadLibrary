@@ -12,13 +12,14 @@ import '../domain/library_book.dart';
 import '../domain/reading_settings.dart';
 import '../formats/epub_book_source.dart';
 import '../formats/txt_book_source.dart';
-import 'chapters_sheet.dart';
+import 'chapters_panel.dart';
 import 'html_view.dart';
 import 'paged_reader.dart';
 import 'paginator.dart';
 import 'progress_hairline.dart';
 import 'reader_session.dart';
-import 'reading_settings_sheet.dart';
+import 'reader_toolbar.dart';
+import 'reading_panels.dart';
 import 'rich_html.dart';
 
 /// La pantalla de lectura.
@@ -39,6 +40,12 @@ class ReaderScreen extends StatefulWidget {
   State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
+/// Identificadores de los paneles de la píldora.
+const _panelTexto = 'texto';
+const _panelTemas = 'temas';
+const _panelBrillo = 'brillo';
+const _panelIndice = 'indice';
+
 class _ReaderScreenState extends ReaderSessionState<ReaderScreen> {
   final _scroll = ScrollController();
 
@@ -55,6 +62,9 @@ class _ReaderScreenState extends ReaderSessionState<ReaderScreen> {
   String _chapterTitle = '';
   String? _error;
   bool _chromeVisible = false;
+
+  /// Qué panel de la píldora está desplegado, si hay alguno.
+  String? _openPanel;
 
   /// Tema, tipografía y medidas. Se cargan del disco al entrar y se guardan en
   /// cuanto se tocan.
@@ -115,32 +125,119 @@ class _ReaderScreenState extends ReaderSessionState<ReaderScreen> {
     _source?.dispose();
   }
 
-  Future<void> _openSettings() async {
-    await showReadingSettingsSheet(
-      context,
-      current: _settings,
-      onChanged: (next) {
-        setState(() => _settings = next);
-        // Se guarda en cada toque en lugar de al cerrar la hoja: si la
-        // aplicación muere con los ajustes abiertos, lo elegido ya está en el
-        // disco. Son escrituras de doscientos bytes.
-        unawaited(services?.settings.save(next) ?? Future<void>.value());
-        unawaited(applyBrightness(_settings.brightness));
-      },
-    );
+  /// Aplica unos ajustes y los deja en el disco.
+  ///
+  /// Se guarda en cada toque en lugar de al cerrar el panel: si la aplicación
+  /// muere con los ajustes abiertos, lo elegido ya está en el disco. Son
+  /// escrituras de doscientos bytes.
+  void _applySettings(ReadingSettings next) {
+    setState(() => _settings = next);
+    unawaited(services?.settings.save(next) ?? Future<void>.value());
+    unawaited(applyBrightness(next.brightness));
   }
 
-  Future<void> _openChapters() async {
-    final source = _source;
-    if (source == null) return;
+  /// Abre el panel [id], o lo cierra si ya estaba abierto.
+  ///
+  /// Tocar otro botón **cambia** de panel sin cerrar nada, que es justo lo que
+  /// la hoja modal de antes no dejaba hacer.
+  void _togglePanel(String id) {
+    setState(() => _openPanel = _openPanel == id ? null : id);
+  }
 
-    final chosen = await showChaptersSheet(
-      context,
-      chapters: source.chapters,
-      current: _chapterIndex,
-      settings: _settings,
-    );
-    if (chosen != null) await _showChapter(chosen);
+  /// Saca o esconde los controles.
+  ///
+  /// Al esconderlos se cierra también el panel abierto: un cajón desplegado sin
+  /// la píldora que lo abrió se queda huérfano en mitad de la página.
+  void _toggleChrome() {
+    setState(() {
+      _chromeVisible = !_chromeVisible;
+      if (!_chromeVisible) _openPanel = null;
+    });
+  }
+
+  /// Los botones de la píldora.
+  List<ReaderToolbarItem> _toolbarItems() {
+    final enabled = _source != null;
+
+    return [
+      ReaderToolbarItem(
+        icon: const Icon(Icons.text_fields),
+        tooltip: 'Texto',
+        panelId: _panelTexto,
+        onTap: enabled ? () => _togglePanel(_panelTexto) : null,
+      ),
+      ReaderToolbarItem(
+        icon: const Icon(Icons.brightness_6_outlined),
+        tooltip: 'Brillo',
+        panelId: _panelBrillo,
+        onTap: enabled ? () => _togglePanel(_panelBrillo) : null,
+      ),
+      // A− y A+ no abren nada: cambian el cuerpo de letra en el acto, que es
+      // para lo que sirve tenerlos a mano en la píldora.
+      ReaderToolbarItem.action(
+        icon: const ToolbarLetter('A−'),
+        tooltip: 'Menos tamaño',
+        onTap: enabled && _settings.fontSize > ReadingSettings.minFontSize
+            ? () => _applySettings(
+                _settings.copyWith(fontSize: _settings.fontSize - 1),
+              )
+            : null,
+      ),
+      ReaderToolbarItem.action(
+        icon: const ToolbarLetter('A+'),
+        tooltip: 'Más tamaño',
+        onTap: enabled && _settings.fontSize < ReadingSettings.maxFontSize
+            ? () => _applySettings(
+                _settings.copyWith(fontSize: _settings.fontSize + 1),
+              )
+            : null,
+      ),
+      ReaderToolbarItem(
+        icon: const Icon(Icons.nightlight_outlined),
+        tooltip: 'Temas',
+        panelId: _panelTemas,
+        onTap: enabled ? () => _togglePanel(_panelTemas) : null,
+      ),
+      ReaderToolbarItem(
+        icon: const Icon(Icons.toc),
+        tooltip: 'Índice',
+        panelId: _panelIndice,
+        onTap: enabled ? () => _togglePanel(_panelIndice) : null,
+      ),
+    ];
+  }
+
+  /// El contenido del panel abierto, o `null` si no hay ninguno.
+  Widget? _buildPanel() {
+    final source = _source;
+
+    return switch (_openPanel) {
+      _panelTexto => TextSettingsPanel(
+        settings: _settings,
+        onChanged: _applySettings,
+      ),
+      _panelTemas => ThemeSettingsPanel(
+        settings: _settings,
+        onChanged: _applySettings,
+      ),
+      _panelBrillo => BrightnessPanel(
+        settings: _settings,
+        palette: _settings.palette,
+        onChanged: _applySettings,
+      ),
+      _panelIndice when source != null => ChaptersPanel(
+        chapters: source.chapters,
+        current: _chapterIndex,
+        settings: _settings,
+        // Elegir capítulo sí cierra el panel: has terminado de navegar, y
+        // dejarlo abierto taparía el sitio al que acabas de saltar.
+        onPick: (chosen) {
+          setState(() => _openPanel = null);
+          unawaited(_showChapter(chosen));
+        },
+      ),
+      _ => null,
+    };
   }
 
   void _updateProgress() {
@@ -320,7 +417,7 @@ class _ReaderScreenState extends ReaderSessionState<ReaderScreen> {
             _lastFraction = paged.fractionAt(index);
             _updateProgress();
           },
-          onTapCentre: () => setState(() => _chromeVisible = !_chromeVisible),
+          onTapCentre: _toggleChrome,
           onNextChapter: _chapterIndex < _chapterCount - 1
               ? () => _showChapter(_chapterIndex + 1)
               : null,
@@ -349,7 +446,7 @@ class _ReaderScreenState extends ReaderSessionState<ReaderScreen> {
             else
               GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onTap: () => setState(() => _chromeVisible = !_chromeVisible),
+                onTap: _toggleChrome,
                 child: ListView.builder(
                   controller: _scroll,
                   padding: EdgeInsets.fromLTRB(
@@ -380,8 +477,13 @@ class _ReaderScreenState extends ReaderSessionState<ReaderScreen> {
                 chapterIndex: _chapterIndex,
                 chapterCount: _chapterCount,
                 onBack: () => unawaited(leave()),
-                onChapters: _source == null ? null : _openChapters,
-                onSettings: _source == null ? null : _openSettings,
+                onTapBackground: _toggleChrome,
+                toolbar: ReaderToolbar(
+                  items: _toolbarItems(),
+                  palette: palette,
+                  openPanel: _openPanel,
+                ),
+                panel: _buildPanel(),
                 progress: _progress,
                 onPrevious: _chapterIndex > 0
                     ? () => _showChapter(_chapterIndex - 1)
@@ -419,6 +521,11 @@ class _ReaderMessage extends StatelessWidget {
 }
 
 /// Los controles: aparecen al tocar el centro y desaparecen al volver a tocar.
+///
+/// La cabecera se quedó **sin iconos**: sólo la flecha de volver y el título,
+/// separados del texto por un filete de un píxel. Todo lo que se puede hacer
+/// dentro del libro está reunido abajo, en la píldora, y ya no repartido entre
+/// dos barras llenas.
 class _ReaderChrome extends StatelessWidget {
   const _ReaderChrome({
     required this.title,
@@ -428,8 +535,9 @@ class _ReaderChrome extends StatelessWidget {
     required this.chapterCount,
     required this.progress,
     required this.onBack,
-    this.onChapters,
-    this.onSettings,
+    required this.onTapBackground,
+    required this.toolbar,
+    this.panel,
     this.onPrevious,
     this.onNext,
   });
@@ -444,103 +552,136 @@ class _ReaderChrome extends StatelessWidget {
   final int chapterCount;
   final ValueListenable<double> progress;
   final VoidCallback onBack;
-  final VoidCallback? onChapters;
-  final VoidCallback? onSettings;
+  final VoidCallback onTapBackground;
+
+  /// La píldora ya montada. El cromo no sabe qué botones lleva.
+  final Widget toolbar;
+
+  /// El panel desplegado, si hay alguno.
+  final Widget? panel;
+
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
 
   @override
   Widget build(BuildContext context) {
     final bar = palette.background.withValues(alpha: 0.96);
+    final open = panel;
 
-    return Column(
-      children: [
-        Container(
-          color: bar,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: Row(
-            children: [
-              IconButton(
-                onPressed: onBack,
-                icon: const Icon(Icons.arrow_back),
-                color: palette.text,
-                tooltip: 'Volver a la biblioteca',
-              ),
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.text,
-                    fontWeight: FontWeight.w600,
-                  ),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: onTapBackground,
+      child: Column(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: bar,
+              border: Border(
+                bottom: BorderSide(
+                  color: palette.muted.withValues(alpha: 0.25),
                 ),
               ),
-              IconButton(
-                onPressed: onChapters,
-                icon: const Icon(Icons.list),
-                color: palette.text,
-                disabledColor: palette.muted.withValues(alpha: 0.4),
-                tooltip: 'Índice',
-              ),
-              IconButton(
-                onPressed: onSettings,
-                icon: const Icon(Icons.text_fields),
-                color: palette.text,
-                disabledColor: palette.muted.withValues(alpha: 0.4),
-                tooltip: 'Ajustes de lectura',
-              ),
-            ],
-          ),
-        ),
-        const Spacer(),
-        Container(
-          color: bar,
-          padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              IconButton(
-                onPressed: onPrevious,
-                icon: const Icon(Icons.chevron_left),
-                color: palette.text,
-                disabledColor: palette.muted.withValues(alpha: 0.4),
-                tooltip: 'Capítulo anterior',
-              ),
-              Flexible(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      chapterTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: palette.text, fontSize: 13),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            child: Row(
+              children: [
+                IconButton(
+                  onPressed: onBack,
+                  icon: const Icon(Icons.chevron_left),
+                  color: palette.text,
+                  tooltip: 'Volver a la biblioteca',
+                ),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: palette.text,
+                      fontWeight: FontWeight.w700,
                     ),
-                    ValueListenableBuilder<double>(
-                      valueListenable: progress,
-                      builder: (_, value, _) => Text(
-                        'Capítulo ${chapterIndex + 1} de $chapterCount  ·  '
-                        '${(value * 100).round()} % del libro',
-                        style: TextStyle(color: palette.muted, fontSize: 11),
-                      ),
+                  ),
+                ),
+                // Un hueco del ancho de la flecha, para que el título quede
+                // centrado de verdad y no desplazado hacia la derecha.
+                const SizedBox(width: 48),
+              ],
+            ),
+          ),
+          const Spacer(),
+          toolbar,
+          Container(
+            color: bar,
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  onPressed: onPrevious,
+                  icon: const Icon(Icons.chevron_left),
+                  color: palette.text,
+                  disabledColor: palette.muted.withValues(alpha: 0.4),
+                  tooltip: 'Capítulo anterior',
+                ),
+                Flexible(
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: progress,
+                    builder: (_, value, _) => Text(
+                      'Capítulo ${chapterIndex + 1} de $chapterCount  ·  '
+                      '${(value * 100).round()} % del libro',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: palette.muted, fontSize: 11),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: onNext,
+                  icon: const Icon(Icons.chevron_right),
+                  color: palette.text,
+                  disabledColor: palette.muted.withValues(alpha: 0.4),
+                  tooltip: 'Capítulo siguiente',
+                ),
+              ],
+            ),
+          ),
+          // El panel crece desde el borde inferior y empuja hacia arriba a la
+          // píldora y a la barra de capítulos. Se le pone techo porque el índice
+          // de un libro largo no cabe entero, y taparlo todo rompería la
+          // sensación de seguir dentro del libro.
+          if (open != null)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.42,
+              ),
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: palette.background,
+                  border: Border(
+                    top: BorderSide(
+                      color: palette.muted.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x1A000000),
+                      blurRadius: 18,
+                      offset: Offset(0, -4),
                     ),
                   ],
                 ),
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  16,
+                  20,
+                  MediaQuery.viewPaddingOf(context).bottom + 18,
+                ),
+                child: open,
               ),
-              IconButton(
-                onPressed: onNext,
-                icon: const Icon(Icons.chevron_right),
-                color: palette.text,
-                disabledColor: palette.muted.withValues(alpha: 0.4),
-                tooltip: 'Capítulo siguiente',
-              ),
-            ],
-          ),
-        ),
-      ],
+            ),
+        ],
+      ),
     );
   }
 }
