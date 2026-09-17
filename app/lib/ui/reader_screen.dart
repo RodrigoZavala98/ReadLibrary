@@ -625,14 +625,26 @@ class _ReaderChrome extends StatelessWidget {
                   tooltip: 'Capítulo anterior',
                 ),
                 Flexible(
-                  child: ValueListenableBuilder<double>(
-                    valueListenable: progress,
-                    builder: (_, value, _) => Text(
-                      'Capítulo ${chapterIndex + 1} de $chapterCount  ·  '
-                      '${(value * 100).round()} % del libro',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: palette.muted, fontSize: 11),
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        chapterTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: palette.text, fontSize: 13),
+                      ),
+                      ValueListenableBuilder<double>(
+                        valueListenable: progress,
+                        builder: (_, value, _) => Text(
+                          'Capítulo ${chapterIndex + 1} de $chapterCount  ·  '
+                          '${(value * 100).round()} % del libro',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: palette.muted, fontSize: 11),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
